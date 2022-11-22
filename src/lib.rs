@@ -38,7 +38,6 @@ pub struct Arguments {
     time: Time,
     ratio: Ratio,
     format: Format,
-    specific: bool
 }
 
 impl Arguments {
@@ -77,63 +76,54 @@ impl Arguments {
             time: Time::None,
             ratio: Ratio::None,
             format: Format::None,
-            specific: false
         }
     }
 
     /// Changes the directory the images will be downloaded to. Only used in the download function.
     pub fn directory(mut self, dir: PathBuf) -> Self {
         self.directory = Some(dir);
-        self.specific = true;
         self
     }
 
     /// Changes the color that Google will filter by.
     pub fn color(mut self, color: Color) -> Self {
         self.color = color;
-        self.specific = true;
         self
     }
 
     /// Changes the color type that Google will filter by.
     pub fn color_type(mut self, color_type: ColorType) -> Self {
         self.color_type = color_type;
-        self.specific = true;
         self
     }
 
     /// Changes the license that Google will filter by.
     pub fn license(mut self, license: License) -> Self {
         self.license = license;
-        self.specific = true;
         self
     }
 
     /// Changes the image type that Google will filter by.
     pub fn image_type(mut self, image_type: ImageType) -> Self {
         self.image_type = image_type;
-        self.specific = true;
         self
     }
 
     /// Changes how long ago the images can be posted.
     pub fn time(mut self, time: Time) -> Self {
         self.time = time;
-        self.specific = true;
         self
     }
 
     /// Changes the rough aspect ratio the images are filtered by.
     pub fn ratio(mut self, ratio: Ratio) -> Self {
         self.ratio = ratio;
-        self.specific = true;
         self
     }
 
     /// Changes the image format that Google will filter by.
     pub fn format(mut self, format: Format) -> Self {
         self.format = format;
-        self.specific = true;
         self
     }
 }
@@ -377,13 +367,12 @@ macro_rules! uoc {
 /// }
 pub fn search(args: &Arguments) -> Result<Vec<Image>, Error> {
     let url = build_url(&args);
-    println!("{}", url);
     let body = match get(url) {
         Ok(b) => b,
         Err(e) => return Err(Error::Network(e))
     };
 
-    let imgs = match unpack(body, args.specific) {
+    let imgs = match unpack(body) {
         Some(i) => i,
         None => return Err(Error::Parse)
     };
@@ -482,11 +471,8 @@ pub fn download(args: &Arguments) -> Result<Vec<PathBuf>, Error> {
         suffix += 1;
 
         let with_extension = match download_image(&client, path, url.to_owned()) {
-            Ok(p) => p,
-            Err(err) => {
-                println!("{:?}", err);
-                continue
-            }
+            Ok(e) => e,
+            Err(_) => continue,
         };
 
         paths.push(with_extension);
@@ -547,7 +533,7 @@ fn get(url: String) -> Result<String, reqwest::Error> {
     Ok(resp.text()?)
 } 
 
-fn unpack(mut body: String, _specific: bool) -> Option<Vec<Image>> {
+fn unpack(mut body: String) -> Option<Vec<Image>> {
     let script = body.rfind("AF_initDataCallback")?;
     body = body[script..].to_string();
 
