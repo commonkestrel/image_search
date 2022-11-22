@@ -3,7 +3,6 @@ name = "image_scraper"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-license-file = "LICENSE"
 keywords = ["google", "images"]
 description = "A crate used to search Google Images based on provided arguments."
 homepage = "https://www.github.com/jibble330/image_scraper"
