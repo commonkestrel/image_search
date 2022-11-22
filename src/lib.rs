@@ -547,7 +547,7 @@ fn get(url: String) -> Result<String, reqwest::Error> {
     Ok(resp.text()?)
 } 
 
-fn unpack(mut body: String, specific: bool) -> Option<Vec<Image>> {
+fn unpack(mut body: String, _specific: bool) -> Option<Vec<Image>> {
     let script = body.rfind("AF_initDataCallback")?;
     body = body[script..].to_string();
 
@@ -565,7 +565,7 @@ fn unpack(mut body: String, specific: bool) -> Option<Vec<Image>> {
         Err(_) => return None
     };
 
-    let image_objects = json.as_array()?[56].as_array()?[1].as_array()?[0].as_array()?[if specific {1} else {0}].as_array()?[1].as_array()?[0].as_array()?;
+    let image_objects = json.as_array()?[56].as_array()?[1].as_array()?[0].as_array()?.last()?.as_array()?[1].as_array()?[0].as_array()?;
 
     let mut images: Vec<Image> = Vec::new();
     for obj in image_objects.iter() {
