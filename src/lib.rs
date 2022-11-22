@@ -11,7 +11,7 @@ use std::fmt;
 use std::env;
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::{PathBuf};
+use std::path::PathBuf;
 
 /// Used to construct the arguments for searching and downloading images.
 /// 
@@ -65,9 +65,9 @@ impl Arguments {
         params_str
     }
 
-    pub fn new(query: String, limit: usize) -> Arguments {
+    pub fn new(query: &str, limit: usize) -> Arguments {
         Arguments{
-            query: query,
+            query: query.to_owned(),
             limit: limit,
             directory: None,
             color: Color::None,
