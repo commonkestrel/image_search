@@ -24,12 +24,14 @@ use std::path::PathBuf;
 ///     let args = Arguments::new("cats", 10)
 ///         .color(image_search::Color::Black)
 ///         .ratio(image_search::Ratio::Square);
-///     let images = image_search::search(&args);
+///     let images = image_search::search(args);
 /// }
 #[derive(Debug)]
 pub struct Arguments {
     query: String,
     limit: usize,
+    thumbnails: bool,
+
     directory: Option<PathBuf>,
     color: Color,
     color_type: ColorType,
@@ -68,6 +70,7 @@ impl Arguments {
         Arguments{
             query: query.to_owned(),
             limit: limit,
+            thumbnails: false,
             directory: None,
             color: Color::None,
             color_type: ColorType::None,
@@ -77,6 +80,14 @@ impl Arguments {
             ratio: Ratio::None,
             format: Format::None,
         }
+    }
+
+    /// Determines whether the image urls are switched out for the thumbnail urls.
+    /// For example, the `urls` function will return the thumbnail urls instead of the image urls, and the `download` function will download the thumbnails instead of the full size image.
+    /// Only affects the `urls` and `download` functions.
+    pub fn thumbnails(mut self, thumb: bool) -> Self {
+        self.thumbnails = thumb;
+        self
     }
 
     /// Changes the directory the images will be downloaded to. Only used in the download function.
@@ -268,8 +279,8 @@ impl Format {
 #[derive(Debug, Clone)]
 pub struct Image {
     pub url: String,
-    pub x: i64,
-    pub y: i64,
+    pub width: i64,
+    pub height: i64,
     pub thumbnail: String,
     pub source: String,
 }
@@ -363,9 +374,9 @@ macro_rules! uoc {
 /// 
 /// fn main() {
 ///     let args = Arguments::new("cats", 10);
-///     let images = image_scraper::search(&args);
+///     let images = image_scraper::search(args);
 /// }
-pub fn search(args: &Arguments) -> Result<Vec<Image>, Error> {
+pub fn search(args: Arguments) -> Result<Vec<Image>, Error> {
     let url = build_url(&args);
     let body = match get(url) {
         Ok(b) => b,
@@ -398,14 +409,19 @@ pub fn search(args: &Arguments) -> Result<Vec<Image>, Error> {
 /// 
 /// fn main() {
 ///     let args = Arguments::new("cats", 10);
-///     let images = image_scraper::urls(&args);
+///     let images = image_scraper::urls(args);
 /// }
-pub fn urls(args: &Arguments) -> Result<Vec<String>, Error> {
-    let images = search(&args)?;
+pub fn urls(args: Arguments) -> Result<Vec<String>, Error> {
+    let thumbnails = (&args.thumbnails).to_owned();
+    let images = search(args)?;
 
     let mut all: Vec<String> = Vec::new();
     for image in images.iter() {
-        all.push(image.url.to_owned());
+        if thumbnails {
+            all.push(image.thumbnail.to_owned());
+        } else {
+            all.push(image.url.to_owned());
+        }
     };
 
     Ok(all)
@@ -429,13 +445,15 @@ pub fn urls(args: &Arguments) -> Result<Vec<String>, Error> {
 ///     let args = Arguments::new("cats", 10).directory(Path::new("downloads"));
 ///     let images = image_scraper::download(&args);
 /// }
-pub fn download(args: &Arguments) -> Result<Vec<PathBuf>, Error> {
-    let images = urls(&args)?;
+pub fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
+    let query = &args.query.to_owned();
+    let directory = &args.directory.to_owned();
+    let images = urls(args)?;
 
     let client = reqwest::blocking::Client::new();
     
-    let dir = match args.directory.to_owned() {
-        Some(dir) => dir,
+    let dir = match directory {
+        Some(dir) => dir.to_owned(),
         None => {match env::current_dir() {
                 Ok(v) => v,
                 Err(e) => return Err(Error::Dir(e))
@@ -451,7 +469,7 @@ pub fn download(args: &Arguments) -> Result<Vec<PathBuf>, Error> {
     let mut suffix = 0;
     let mut paths: Vec<PathBuf> = Vec::new();
     for url in images.iter() {
-        let mut path = dir.join(args.query.to_owned() + &suffix.to_string());
+        let mut path = dir.join(query.to_owned() + &suffix.to_string());
 
         let all = glob::glob(&(path.display().to_string() + ".*")).unwrap();
         let mut matches = 0;
@@ -462,7 +480,7 @@ pub fn download(args: &Arguments) -> Result<Vec<PathBuf>, Error> {
         while matches > 0 {
             matches = 0;
             suffix += 1;
-            path = dir.join(args.query.to_owned() + &suffix.to_string());
+            path = dir.join(query.to_owned() + &suffix.to_string());
             let all = glob::glob(&(path.display().to_string() + ".*")).unwrap();
             for _ in all {
                 matches += 1;
@@ -557,7 +575,7 @@ fn unpack(mut body: String) -> Option<Vec<Image>> {
     for obj in image_objects.iter() {
         let inner = uoc!(uoc!(uoc!(uoc!(uoc!(obj.as_array())[0].as_array())[0].as_object())["444383007"].as_array())[1].as_array());
 
-        let (url, x, y) = match inner[3].as_array() {
+        let (url, width, height) = match inner[3].as_array() {
             Some(i) => {
                 (uoc!(i[0].as_str()).to_string(), uoc!(i[2].as_i64()), uoc!(i[1].as_i64()))
             },
@@ -566,8 +584,8 @@ fn unpack(mut body: String) -> Option<Vec<Image>> {
 
         let image = Image{
             url,
-            x,
-            y,
+            width,
+            height,
             thumbnail: uoc!(uoc!(inner[3].as_array())[0].as_str()).to_string(),
             source: uoc!(uoc!(uoc!(inner[9].as_object())["2003"].as_array())[2].as_str()).to_string(),
         };
