@@ -1,25 +1,25 @@
-//! A crate designed to search Google Images based on provided arguments. 
-//! Due to the limitations of using only a single request to fetch images, only a max of about 100 images can be found per request. 
+//! A crate designed to search Google Images based on provided arguments.
+//! Due to the limitations of using only a single request to fetch images, only a max of about 100 images can be found per request.
 //! These images may be protected under copyright, and you shouldn't do anything punishable with them, like using them for commercial use.
 
+extern crate glob;
+extern crate infer;
 extern crate reqwest;
 extern crate serde_json;
-extern crate infer;
-extern crate glob;
 
-use std::fmt;
 use std::env;
+use std::fmt;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
 /// Used to construct the arguments for searching and downloading images.
-/// 
+///
 /// # Examples
 /// ```
 /// extern crate image_search;
 /// use image_search::{self, Arguments};
-/// 
+///
 /// fn main() {
 ///     let args = Arguments::new("cats", 10)
 ///         .color(image_search::Color::Black)
@@ -46,7 +46,7 @@ impl Arguments {
     fn params(&self) -> String {
         let split = &String::from("%2C");
         let mut params_str = String::new();
-        
+
         let color = self.color.param();
         let color_type = self.color_type.param();
         let license = self.license.param();
@@ -67,7 +67,7 @@ impl Arguments {
     }
 
     pub fn new(query: &str, limit: usize) -> Arguments {
-        Arguments{
+        Arguments {
             query: query.to_owned(),
             limit: limit,
             thumbnails: false,
@@ -142,7 +142,18 @@ impl Arguments {
 #[derive(Debug)]
 pub enum Color {
     None,
-    Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink, White, Gray, Black, Brown
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Teal,
+    Blue,
+    Purple,
+    Pink,
+    White,
+    Gray,
+    Black,
+    Brown,
 }
 
 impl Color {
@@ -160,24 +171,26 @@ impl Color {
             Self::White => "isc:white",
             Self::Gray => "isc:gray",
             Self::Black => "isc:black",
-            Self::Brown => "isc:brown"
+            Self::Brown => "isc:brown",
         })
-    } 
+    }
 }
 
 #[derive(Debug)]
 pub enum ColorType {
     None,
-    Color, Grayscale, Transparent
+    Color,
+    Grayscale,
+    Transparent,
 }
 
 impl ColorType {
     fn param(&self) -> String {
-        String::from(match self{
+        String::from(match self {
             Self::None => "",
             Self::Color => "ic:full",
             Self::Grayscale => "ic:gray",
-            Self::Transparent => "ic:trans"
+            Self::Transparent => "ic:trans",
         })
     }
 }
@@ -185,7 +198,8 @@ impl ColorType {
 #[derive(Debug)]
 pub enum License {
     None,
-    CreativeCommons, Other
+    CreativeCommons,
+    Other,
 }
 
 impl License {
@@ -193,7 +207,7 @@ impl License {
         String::from(match self {
             Self::None => "",
             Self::CreativeCommons => "il:cl",
-            Self::Other => "il:ol"
+            Self::Other => "il:ol",
         })
     }
 }
@@ -201,7 +215,11 @@ impl License {
 #[derive(Debug)]
 pub enum ImageType {
     None,
-    Face, Photo, Clipart, Lineart, Animated
+    Face,
+    Photo,
+    Clipart,
+    Lineart,
+    Animated,
 }
 
 impl ImageType {
@@ -212,7 +230,7 @@ impl ImageType {
             Self::Photo => "itp:photo",
             Self::Clipart => "itp:clipart",
             Self::Lineart => "itp:lineart",
-            Self::Animated => "itp:animated"
+            Self::Animated => "itp:animated",
         })
     }
 }
@@ -220,7 +238,10 @@ impl ImageType {
 #[derive(Debug)]
 pub enum Time {
     None,
-    Day, Week, Month, Year
+    Day,
+    Week,
+    Month,
+    Year,
 }
 
 impl Time {
@@ -230,7 +251,7 @@ impl Time {
             Self::Day => "qdr:d",
             Self::Week => "qdr:w",
             Self::Month => "qdr:m",
-            Self::Year => "qdr:y"
+            Self::Year => "qdr:y",
         })
     }
 }
@@ -238,7 +259,10 @@ impl Time {
 #[derive(Debug)]
 pub enum Ratio {
     None,
-    Tall, Square, Wide, Panoramic
+    Tall,
+    Square,
+    Wide,
+    Panoramic,
 }
 
 impl Ratio {
@@ -248,7 +272,7 @@ impl Ratio {
             Self::Tall => "iar:t",
             Self::Square => "iar:s",
             Self::Wide => "iar:w",
-            Self::Panoramic => "iar:xw"
+            Self::Panoramic => "iar:xw",
         })
     }
 }
@@ -256,7 +280,14 @@ impl Ratio {
 #[derive(Debug)]
 pub enum Format {
     None,
-    Jpg, Gif, Png, Bmp, Svg, Webp, Ico, Raw
+    Jpg,
+    Gif,
+    Png,
+    Bmp,
+    Svg,
+    Webp,
+    Ico,
+    Raw,
 }
 
 impl Format {
@@ -270,7 +301,7 @@ impl Format {
             Self::Svg => "ift:svg",
             Self::Webp => "ift:webp",
             Self::Ico => "ift:ico",
-            Self::Raw => "ift:raw"
+            Self::Raw => "ift:raw",
         })
     }
 }
@@ -316,7 +347,7 @@ impl std::error::Error for Error {
 enum DownloadError {
     Extension,
     Fs(std::io::Error),
-    Network(reqwest::Error)
+    Network(reqwest::Error),
 }
 
 impl fmt::Display for DownloadError {
@@ -355,23 +386,25 @@ macro_rules! uoc {
     ($opt: expr) => {
         match $opt {
             Some(v) => v,
-            None => {continue;}
+            None => {
+                continue;
+            }
         }
-    }
+    };
 }
 
 /// Search for images based on the provided arguments and return images up to the provided limit.
-/// 
+///
 /// # Errors
 /// This function will return an error if:
 /// * The GET request fails
 /// * The images are not able to be parsed
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use image_scraper::{self, Arguments}
-/// 
+///
 /// fn main() {
 ///     let args = Arguments::new("cats", 10);
 ///     let images = image_scraper::search(args);
@@ -380,14 +413,14 @@ pub fn search(args: Arguments) -> Result<Vec<Image>, Error> {
     let url = build_url(&args);
     let body = match get(url) {
         Ok(b) => b,
-        Err(e) => return Err(Error::Network(e))
+        Err(e) => return Err(Error::Network(e)),
     };
 
     let imgs = match unpack(body) {
         Some(i) => i,
-        None => return Err(Error::Parse)
+        None => return Err(Error::Parse),
     };
-    
+
     if imgs.len() > args.limit && args.limit > 0 {
         Ok(imgs[..args.limit].to_vec())
     } else {
@@ -396,17 +429,17 @@ pub fn search(args: Arguments) -> Result<Vec<Image>, Error> {
 }
 
 /// Search for images based on the provided arguments and return the urls of the images
-/// 
+///
 /// # Errors
 /// This function will return an error if:
 /// * The GET request fails
 /// * The images are not able to be parsed
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use image_scraper::{self, Arguments}
-/// 
+///
 /// fn main() {
 ///     let args = Arguments::new("cats", 10);
 ///     let images = image_scraper::urls(args);
@@ -422,25 +455,25 @@ pub fn urls(args: Arguments) -> Result<Vec<String>, Error> {
         } else {
             all.push(image.url.to_owned());
         }
-    };
+    }
 
     Ok(all)
 }
 
 /// Search for images based on the provided arguments and downloads them to the given path, or the "images" folder if none is provided.
-/// 
+///
 /// # Errors
 /// This function will return an error if:
 /// * The GET request fails
 /// * The images are not able to be parsed
 /// * The program is unable to create/read/write to files or directories
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use image_scraper::{self, Arguments}
 /// use std::path::Path;
-/// 
+///
 /// fn main() {
 ///     let args = Arguments::new("cats", 10).directory(Path::new("downloads"));
 ///     let images = image_scraper::download(&args);
@@ -451,21 +484,21 @@ pub fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
     let images = urls(args)?;
 
     let client = reqwest::blocking::Client::new();
-    
+
     let dir = match directory {
         Some(dir) => dir.to_owned(),
-        None => {match env::current_dir() {
-                Ok(v) => v,
-                Err(e) => return Err(Error::Dir(e))
-            }.join("images")
+        None => match env::current_dir() {
+            Ok(v) => v,
+            Err(e) => return Err(Error::Dir(e)),
         }
+        .join("images"),
     };
 
     match std::fs::create_dir_all(&dir) {
         Ok(_) => (),
-        Err(e) => return Err(Error::Dir(e))
+        Err(e) => return Err(Error::Dir(e)),
     };
-    
+
     let mut suffix = 0;
     let mut paths: Vec<PathBuf> = Vec::new();
     for url in images.iter() {
@@ -494,37 +527,41 @@ pub fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
         };
 
         paths.push(with_extension);
-    };
+    }
 
     Ok(paths)
 }
 
-fn download_image(client: &reqwest::blocking::Client, mut path: PathBuf, url: String) -> Result<PathBuf, DownloadError>  {
+fn download_image(
+    client: &reqwest::blocking::Client,
+    mut path: PathBuf,
+    url: String,
+) -> Result<PathBuf, DownloadError> {
     let resp = match client.get(url).send() {
         Ok(r) => r,
-        Err(e) => return Err(DownloadError::Network(e))
+        Err(e) => return Err(DownloadError::Network(e)),
     };
 
     let buf = match resp.bytes() {
         Ok(b) => b,
-        Err(e) => return Err(DownloadError::Network(e))
+        Err(e) => return Err(DownloadError::Network(e)),
     };
 
     let kind = match infer::get(&buf) {
         Some(k) => k,
-        None => return Err(DownloadError::Extension)
+        None => return Err(DownloadError::Extension),
     };
 
     path.set_extension(kind.extension());
 
     let mut f = match File::create(&path) {
         Ok(f) => f,
-        Err(e) => return Err(DownloadError::Fs(e))
+        Err(e) => return Err(DownloadError::Fs(e)),
     };
 
     match f.write_all(&buf) {
         Ok(_) => (),
-        Err(e) => return Err(DownloadError::Fs(e))
+        Err(e) => return Err(DownloadError::Fs(e)),
     };
 
     Ok(path)
@@ -549,7 +586,7 @@ fn get(url: String) -> Result<String, reqwest::Error> {
     let resp = client.get(url).header("User-Agent", agent).send()?;
 
     Ok(resp.text()?)
-} 
+}
 
 fn unpack(mut body: String) -> Option<Vec<Image>> {
     let script = body.rfind("AF_initDataCallback")?;
@@ -566,32 +603,43 @@ fn unpack(mut body: String) -> Option<Vec<Image>> {
 
     let json: serde_json::Value = match serde_json::from_str(&body) {
         Ok(j) => j,
-        Err(_) => return None
+        Err(_) => return None,
     };
 
-    let image_objects = json.as_array()?[56].as_array()?[1].as_array()?[0].as_array()?.last()?.as_array()?[1].as_array()?[0].as_array()?;
+    let image_objects = json.as_array()?[56].as_array()?[1].as_array()?[0]
+        .as_array()?
+        .last()?
+        .as_array()?[1]
+        .as_array()?[0]
+        .as_array()?;
 
     let mut images: Vec<Image> = Vec::new();
     for obj in image_objects.iter() {
-        let inner = uoc!(uoc!(uoc!(uoc!(uoc!(obj.as_array())[0].as_array())[0].as_object())["444383007"].as_array())[1].as_array());
+        let inner = uoc!(uoc!(
+            uoc!(uoc!(uoc!(obj.as_array())[0].as_array())[0].as_object())["444383007"].as_array()
+        )[1]
+        .as_array());
 
         let (url, width, height) = match inner[3].as_array() {
-            Some(i) => {
-                (uoc!(i[0].as_str()).to_string(), uoc!(i[2].as_i64()), uoc!(i[1].as_i64()))
-            },
+            Some(i) => (
+                uoc!(i[0].as_str()).to_string(),
+                uoc!(i[2].as_i64()),
+                uoc!(i[1].as_i64()),
+            ),
             None => continue,
         };
 
-        let image = Image{
+        let image = Image {
             url,
             width,
             height,
             thumbnail: uoc!(uoc!(inner[2].as_array())[0].as_str()).to_string(),
-            source: uoc!(uoc!(uoc!(inner[22].as_object())["2003"].as_array())[2].as_str()).to_string(),
+            source: uoc!(uoc!(uoc!(inner[22].as_object())["2003"].as_array())[2].as_str())
+                .to_string(),
         };
 
         images.push(image);
-    };
+    }
 
     Some(images)
 }
