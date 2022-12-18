@@ -2,9 +2,6 @@
 //! Due to the limitations of using only a single request to fetch images, only a max of about 100 images can be found per request.
 //! These images may be protected under copyright, and you shouldn't do anything punishable with them, like using them for commercial use.
 
-#[cfg(feature = "blocking")]
-pub mod blocking;
-
 extern crate glob;
 extern crate infer;
 extern crate reqwest;
@@ -412,9 +409,9 @@ macro_rules! uoc {
 ///     let args = Arguments::new("cats", 10);
 ///     let images = image_scraper::search(args);
 /// }
-pub async fn search(args: Arguments) -> Result<Vec<Image>, Error> {
+pub fn search(args: Arguments) -> Result<Vec<Image>, Error> {
     let url = build_url(&args);
-    let body = match get(url).await {
+    let body = match get(url) {
         Ok(b) => b,
         Err(e) => return Err(Error::Network(e)),
     };
@@ -447,9 +444,9 @@ pub async fn search(args: Arguments) -> Result<Vec<Image>, Error> {
 ///     let args = Arguments::new("cats", 10);
 ///     let images = image_scraper::urls(args);
 /// }
-pub async fn urls(args: Arguments) -> Result<Vec<String>, Error> {
+pub fn urls(args: Arguments) -> Result<Vec<String>, Error> {
     let thumbnails = (&args.thumbnails).to_owned();
-    let images = search(args).await?;
+    let images = search(args)?;
 
     let mut all: Vec<String> = Vec::new();
     for image in images.iter() {
@@ -481,12 +478,12 @@ pub async fn urls(args: Arguments) -> Result<Vec<String>, Error> {
 ///     let args = Arguments::new("cats", 10).directory(Path::new("downloads"));
 ///     let images = image_scraper::download(&args);
 /// }
-pub async fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
+pub fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
     let query = &args.query.to_owned();
     let directory = &args.directory.to_owned();
-    let images = urls(args).await?;
+    let images = urls(args)?;
 
-    let client = reqwest::Client::new();
+    let client = reqwest::blocking::Client::new();
 
     let dir = match directory {
         Some(dir) => dir.to_owned(),
@@ -524,7 +521,7 @@ pub async fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
         }
         suffix += 1;
 
-        let with_extension = match download_image(&client, path, url.to_owned()).await {
+        let with_extension = match download_image(&client, path, url.to_owned()) {
             Ok(e) => e,
             Err(_) => continue,
         };
@@ -535,17 +532,17 @@ pub async fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
     Ok(paths)
 }
 
-async fn download_image(
-    client: &reqwest::Client,
+fn download_image(
+    client: &reqwest::blocking::Client,
     mut path: PathBuf,
     url: String,
 ) -> Result<PathBuf, DownloadError> {
-    let resp = match client.get(url).send().await {
+    let resp = match client.get(url).send() {
         Ok(r) => r,
         Err(e) => return Err(DownloadError::Network(e)),
     };
 
-    let buf = match resp.bytes().await {
+    let buf = match resp.bytes() {
         Ok(b) => b,
         Err(e) => return Err(DownloadError::Network(e)),
     };
@@ -582,13 +579,13 @@ fn build_url(args: &Arguments) -> String {
     url
 }
 
-async fn get(url: String) -> Result<String, reqwest::Error> {
-    let client = reqwest::Client::new();
+fn get(url: String) -> Result<String, reqwest::Error> {
+    let client = reqwest::blocking::Client::new();
     let agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36";
 
-    let resp = client.get(url).header("User-Agent", agent).send().await?;
+    let resp = client.get(url).header("User-Agent", agent).send()?;
 
-    Ok(resp.text().await?)
+    Ok(resp.text()?)
 }
 
 fn unpack(mut body: String) -> Option<Vec<Image>> {

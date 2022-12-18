@@ -1,9 +1,9 @@
 [package]
 name = "image_scraper"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
-keywords = ["google", "images"]
+keywords = ["google", "images", "image", "search"]
 description = "A crate used to search Google Images based on provided arguments."
 homepage = "https://www.github.com/jibble330/image_scraper"
 readme = "README.md"
@@ -11,7 +11,10 @@ readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-reqwest = { version = "0.11.13", features = ["blocking"]}
+reqwest = "0.11.13"
 infer = "0.11.0"
 glob = "0.3.0"
 serde_json = "1.0.88"
+
+[features]
+blocking = ["reqwest/blocking"]
