@@ -1,6 +1,7 @@
 # Image Search
 ![Crates.io](https://img.shields.io/crates/v/image_search)
 ![docs.rs](https://img.shields.io/docsrs/image_search)
+
 A crate designed to search Google Images based on provided arguments.
 Due to the limitations of using only a single request to fetch images, only a max of about 100 images can be found per request.
 These images may be protected under copyright, and you shouldn't do anything punishable with them, like using them for commercial use.
