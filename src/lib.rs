@@ -9,7 +9,7 @@
 //! image_search = "0.2"
 //! tokio = { version = "1", features = ["full"] }
 //! ```
-//! It is called like so
+//! It can be used like this:
 //! ```
 //! extern crate tokio;
 //! extern crate image_search;
@@ -42,7 +42,7 @@
 //! extern crate image_search;
 //! 
 //! use std::path::PathBuf;
-//! use image_search{Arguments, blocking::{urls, search, download}};
+//! use image_search::{Arguments, blocking::{urls, search, download}};
 //! 
 //! fn main() -> Result<(), image_search::Error> {
 //!     let args = Arguments::new("example", 10)
@@ -50,7 +50,7 @@
 //!         .directory(PathBuf::from("downloads")); // Only affects the download function
 //!     
 //!     let image_urls = urls(args.clone())?;
-//!     let images = search(args.clones())?;
+//!     let images = search(args.clone())?;
 //!     let paths = download(args)?;
 //! 
 //!     Ok(())

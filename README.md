@@ -1,6 +1,7 @@
 # Image Search
 ![Crates.io](https://img.shields.io/crates/v/image_search)
 ![docs.rs](https://img.shields.io/docsrs/image_search)
+![Crates.io](https://img.shields.io/crates/l/image_search)
 
 A crate designed to search Google Images based on provided arguments.
 Due to the limitations of using only a single request to fetch images, only a max of about 100 images can be found per request.
@@ -13,7 +14,7 @@ Using the asynchronous API requires some sort of async runtime, usually [`tokio`
 image_search = "0.2"
 tokio = { version = "1", features = ["full"] }
 ```
-It is called like so
+It can be used like this:
 ```rust
 extern crate tokio;
 extern crate image_search;
@@ -45,7 +46,7 @@ This is called like so:
 extern crate image_search;
 
 use std::path::PathBuf;
-use image_search{Arguments, blocking::{urls, search, download}};
+use image_search::{Arguments, blocking::{urls, search, download}};
 
 fn main() -> Result<(), image_search::Error> {
     let args = Arguments::new("example", 10)
@@ -53,7 +54,7 @@ fn main() -> Result<(), image_search::Error> {
         .directory(PathBuf::from("downloads")); // Only affects the download function
     
     let image_urls = urls(args.clone())?;
-    let images = search(args.clones())?;
+    let images = search(args.clone())?;
     let paths = download(args)?;
 
     Ok(())
