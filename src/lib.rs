@@ -14,16 +14,17 @@
 //! extern crate tokio;
 //! extern crate image_search;
 //! 
+//! use std::path::PathBuf;
 //! use image_search::{Arguments, urls, search, download};
 //! 
 //! #[tokio::main]
-//! async fn main() -> Resutl<(), image_search::Error> {
+//! async fn main() -> Result<(), image_search::Error> {
 //!     let args = Arguments::new("example", 10)
 //!         .color(image_search::Color::Gray)
-//!         .directory(Path::new("downloads")); // Only affects the download function
+//!         .directory(PathBuf::new("downloads")); // Only affects the download function
 //!     
 //!     let image_urls = urls(args.clone()).await?;
-//!     let images = search(args.clones()).await?;
+//!     let images = search(args.clone()).await?;
 //!     let paths = download(args).await?;
 //! 
 //!     Ok(())
@@ -40,12 +41,13 @@
 //! ```
 //! extern crate image_search;
 //! 
+//! use std::path::PathBuf;
 //! use image_search{Arguments, blocking::{urls, search, download}};
 //! 
 //! fn main() -> Result<(), image_search::Error> {
 //!     let args = Arguments::new("example", 10)
 //!         .color(image_search::Color::Gray)
-//!         .directory(Path::new("downloads")); // Only affects the download function
+//!         .directory(PathBuf::from("downloads")); // Only affects the download function
 //!     
 //!     let image_urls = urls(args.clone())?;
 //!     let images = search(args.clones())?;
