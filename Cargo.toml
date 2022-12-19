@@ -1,11 +1,11 @@
 [package]
 name = "image_search"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT"
 keywords = ["google", "images", "image", "search"]
 description = "A crate used to search Google Images based on provided arguments."
-homepage = "https://www.github.com/jibble330/image_scraper"
+repository = "https://www.github.com/jibble330/image_search"
 readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -17,4 +17,5 @@ glob = "0.3.0"
 serde_json = "1.0.88"
 
 [features]
+## Blocking enables fetching images synchronously.
 blocking = ["reqwest/blocking"]

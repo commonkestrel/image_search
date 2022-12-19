@@ -1,6 +1,60 @@
 //! A crate designed to search Google Images based on provided arguments.
 //! Due to the limitations of using only a single request to fetch images, only a max of about 100 images can be found per request.
 //! These images may be protected under copyright, and you shouldn't do anything punishable with them, like using them for commercial use.
+//! 
+//! # Examples
+//! Using the asynchronous API requires some sort of async runtime, usually [`tokio`], which can be added to your `Cargo.toml` like so:
+//! ```
+//! [dependencies]
+//! image_search = "0.2"
+//! tokio = { version = "1", features = ["full"] }
+//! ```
+//! It is called like so
+//! ```
+//! extern crate tokio;
+//! extern crate image_search;
+//! 
+//! use image_search::{Arguments, urls, search, download};
+//! 
+//! #[tokio::main]
+//! async fn main() -> Resutl<(), image_search::Error> {
+//!     let args = Arguments::new("example", 10)
+//!         .color(image_search::Color::Gray)
+//!         .directory(Path::new("downloads")); // Only affects the download function
+//!     
+//!     let image_urls = urls(args.clone()).await?;
+//!     let images = search(args.clones()).await?;
+//!     let paths = download(args).await?;
+//! 
+//!     Ok(())
+//! }
+//! ```
+//! 
+//! # Blocking
+//! There is an optional "blocking" API that can be enabled:
+//! ```
+//! [dependencies]
+//! image_search = { version = "0.2", features = ["blocking"] }
+//! ```
+//! This is called like so:
+//! ```
+//! extern crate image_search;
+//! 
+//! use image_search{Arguments, blocking::{urls, search, download}};
+//! 
+//! fn main() -> Result<(), image_search::Error> {
+//!     let args = Arguments::new("example", 10)
+//!         .color(image_search::Color::Gray)
+//!         .directory(Path::new("downloads")); // Only affects the download function
+//!     
+//!     let image_urls = urls(args.clone())?;
+//!     let images = search(args.clones())?;
+//!     let paths = download(args)?;
+//! 
+//!     Ok(())
+//! }
+//! ```
+//! [`tokio`]: https://docs.rs/tokio/latest/tokio/
 
 #[cfg(feature = "blocking")]
 pub mod blocking;
@@ -18,18 +72,21 @@ use std::path::PathBuf;
 
 /// Used to construct the arguments for searching and downloading images.
 ///
-/// # Examples
+/// # Example
 /// ```
+/// extern crate tokio;
 /// extern crate image_search;
+///
 /// use image_search::{self, Arguments};
 ///
-/// fn main() {
-///     let args = Arguments::new("cats", 10)
+/// #[tokio::main]
+/// async fn main() -> Result<(), image_search::Error> {
+///     let args = Arguments::new("example", 10)
 ///         .color(image_search::Color::Black)
 ///         .ratio(image_search::Ratio::Square);
-///     let images = image_search::search(args);
+///     let images = image_search::search(args).await?;
 /// }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Arguments {
     query: String,
     limit: usize,
@@ -93,56 +150,56 @@ impl Arguments {
         self
     }
 
-    /// Changes the directory the images will be downloaded to. Only used in the download function.
+    /// Sets the directory the images will be downloaded to. Only used in the download function.
     pub fn directory(mut self, dir: PathBuf) -> Self {
         self.directory = Some(dir);
         self
     }
 
-    /// Changes the color that Google will filter by.
+    /// Sets the color that Google will filter by.
     pub fn color(mut self, color: Color) -> Self {
         self.color = color;
         self
     }
 
-    /// Changes the color type that Google will filter by.
+    /// Sets the color type that Google will filter by.
     pub fn color_type(mut self, color_type: ColorType) -> Self {
         self.color_type = color_type;
         self
     }
 
-    /// Changes the license that Google will filter by.
+    /// Sets the license that Google will filter by.
     pub fn license(mut self, license: License) -> Self {
         self.license = license;
         self
     }
 
-    /// Changes the image type that Google will filter by.
+    /// Sets the image type that Google will filter by.
     pub fn image_type(mut self, image_type: ImageType) -> Self {
         self.image_type = image_type;
         self
     }
 
-    /// Changes how long ago the images can be posted.
+    /// Sets how long ago the images can be posted.
     pub fn time(mut self, time: Time) -> Self {
         self.time = time;
         self
     }
 
-    /// Changes the rough aspect ratio the images are filtered by.
+    /// Sets the rough aspect ratio the images are filtered by.
     pub fn ratio(mut self, ratio: Ratio) -> Self {
         self.ratio = ratio;
         self
     }
 
-    /// Changes the image format that Google will filter by.
+    /// Sets the image format that Google will filter by.
     pub fn format(mut self, format: Format) -> Self {
         self.format = format;
         self
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Color {
     None,
     Red,
@@ -179,7 +236,7 @@ impl Color {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum ColorType {
     None,
     Color,
@@ -198,7 +255,7 @@ impl ColorType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum License {
     None,
     CreativeCommons,
@@ -215,7 +272,7 @@ impl License {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum ImageType {
     None,
     Face,
@@ -238,7 +295,7 @@ impl ImageType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Time {
     None,
     Day,
@@ -259,7 +316,7 @@ impl Time {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Ratio {
     None,
     Tall,
@@ -280,7 +337,7 @@ impl Ratio {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Format {
     None,
     Jpg,
@@ -309,7 +366,17 @@ impl Format {
     }
 }
 
-/// Contains info about an image including the original url, the dimensions of the image (x, y), the url of the thumbnail, and the name of the source
+/// Contains info about an image including the original url, the dimensions of the image (x, y), the url of the thumbnail, and the name of the source.
+///
+/// # Example
+/// ```
+/// Image {
+///     url: "https://www.example.com/static/image.jpg",
+///     width: 1920,
+///     height: 1080,
+///     thumbnail: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQQazt0j8bbA34OYbfE9hf7g_bzFGwbSZmwflwVw-rnOSOmdSX03xYzHZkm_TsmbnM3m88&usqp=CAU",
+///     source: "https://www.example.com/articles/example.html"
+/// }
 #[derive(Debug, Clone)]
 pub struct Image {
     pub url: String,
@@ -384,18 +451,6 @@ macro_rules! debug_display {
 }
 debug_display!(for Image, Arguments, Color, ColorType, License, ImageType, Time, Ratio, Format);
 
-// shorthand for unwrap_or_continue
-macro_rules! uoc {
-    ($opt: expr) => {
-        match $opt {
-            Some(v) => v,
-            None => {
-                continue;
-            }
-        }
-    };
-}
-
 /// Search for images based on the provided arguments and return images up to the provided limit.
 ///
 /// # Errors
@@ -406,11 +461,17 @@ macro_rules! uoc {
 /// # Examples
 ///
 /// ```
-/// use image_scraper::{self, Arguments}
+/// extern crate tokio;
+/// extern crate image_search;
 ///
-/// fn main() {
-///     let args = Arguments::new("cats", 10);
-///     let images = image_scraper::search(args);
+/// use image_search::{Arguments, search};
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), image_search::Error> {
+///     let args = Arguments::new("example", 10);
+///     let images = search(args).await?;
+///
+///     Ok(())
 /// }
 pub async fn search(args: Arguments) -> Result<Vec<Image>, Error> {
     let url = build_url(&args);
@@ -441,11 +502,17 @@ pub async fn search(args: Arguments) -> Result<Vec<Image>, Error> {
 /// # Examples
 ///
 /// ```
-/// use image_scraper::{self, Arguments}
+/// extern crate tokio;
+/// extern crate image_search;
 ///
-/// fn main() {
-///     let args = Arguments::new("cats", 10);
-///     let images = image_scraper::urls(args);
+/// use image_search::{Arguments, urls};
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), image_search::Error> {
+///     let args = Arguments::new("example", 10);
+///     let images = image_search::urls(args).await?;
+///
+///     Ok(())
 /// }
 pub async fn urls(args: Arguments) -> Result<Vec<String>, Error> {
     let thumbnails = (&args.thumbnails).to_owned();
@@ -463,7 +530,7 @@ pub async fn urls(args: Arguments) -> Result<Vec<String>, Error> {
     Ok(all)
 }
 
-/// Search for images based on the provided arguments and downloads them to the given path, or the "images" folder if none is provided.
+/// Search for images based on the provided `Arguments` and downloads them to the path specified in the `directory` field in `Arguments`, or the "images" folder if none is provided.
 ///
 /// # Errors
 /// This function will return an error if:
@@ -474,12 +541,18 @@ pub async fn urls(args: Arguments) -> Result<Vec<String>, Error> {
 /// # Examples
 ///
 /// ```
-/// use image_scraper::{self, Arguments}
+/// extern crate tokio;
+/// extern crate image_search;
+///
+/// use image_search::{Arguments, download};
 /// use std::path::Path;
 ///
-/// fn main() {
-///     let args = Arguments::new("cats", 10).directory(Path::new("downloads"));
-///     let images = image_scraper::download(&args);
+/// #[tokio::main]
+/// async fn main() -> Result<(), image_search::Error> {
+///     let args = Arguments::new("example", 10).directory(Path::new("downloads"));
+///     let paths = image_search::download(args).await?;
+///
+///     Ok(())
 /// }
 pub async fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
     let query = &args.query.to_owned();
@@ -589,6 +662,18 @@ async fn get(url: String) -> Result<String, reqwest::Error> {
     let resp = client.get(url).header("User-Agent", agent).send().await?;
 
     Ok(resp.text().await?)
+}
+
+/// shorthand for unwrap_or_continue
+macro_rules! uoc {
+    ($opt: expr) => {
+        match $opt {
+            Some(v) => v,
+            None => {
+                continue;
+            }
+        }
+    };
 }
 
 fn unpack(mut body: String) -> Option<Vec<Image>> {
