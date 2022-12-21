@@ -1,6 +1,5 @@
-//! Image Search is designed to search Google Images based on provided arguments.
-//! Due to the limitations of using only a single request to fetch images, only a max of about 100 images can be found per request.
-//! These images may be protected under copyright, and you shouldn't do anything punishable with them, like using them for commercial use.
+//! `image_search::blocking` is an optional feature that contains all the original capabilities of the non-blocking counterpart, but synchronous instead of async.
+//! Similar to [`reqwest`](https://crates.io/crates/reqwest)'s blocking feature
 
 extern crate futures;
 extern crate glob;

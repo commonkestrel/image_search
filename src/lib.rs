@@ -3,10 +3,10 @@
 //! These images may be protected under copyright, and you shouldn't do anything punishable with them, like using them for commercial use.
 //!
 //! # Examples
-//! Using the asynchronous API requires some sort of async runtime, usually [`tokio`], which can be added to your `Cargo.toml` like so:
+//! Using the asynchronous API requires some sort of async runtime, usually [`tokio`](https://crates.io/crates/tokio), which can be added to your `Cargo.toml` like so:
 //! ```
 //! [dependencies]
-//! image_search = "0.2"
+//! image_search = "0.3"
 //! tokio = { version = "1", features = ["full"] }
 //! ```
 //! It can be used like this:
@@ -35,7 +35,7 @@
 //! There is an optional "blocking" API that can be enabled:
 //! ```
 //! [dependencies]
-//! image_search = { version = "0.2", features = ["blocking"] }
+//! image_search = { version = "0.3", features = ["blocking"] }
 //! ```
 //! This is called like so:
 //! ```
@@ -56,7 +56,6 @@
 //!     Ok(())
 //! }
 //! ```
-//! [`tokio`]: https://docs.rs/tokio/latest/tokio/
 
 #[cfg(feature = "blocking")]
 pub mod blocking;

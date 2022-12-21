@@ -32,10 +32,10 @@ They are used via the various methods on the `Arguments` struct. Each argument i
 | **Format** | `Jpg`, `Gif`, `Png`, `Bmp`, `Svg`, `Webp`, `Ico`, `Raw` | Filters out images that are not a specified format. If you would like to download images as a specific format, use the download_format argument instead. |
 
 # Examples
-Using the asynchronous API requires some sort of async runtime, usually [`tokio`], which can be added to your `Cargo.toml` like so:
+Using the asynchronous API requires some sort of async runtime, usually [`tokio`](https://crates.io/crates/tokio), which can be added to your `Cargo.toml` like so:
 ```toml
 [dependencies]
-image_search = "0.2"
+image_search = "0.3"
 tokio = { version = "1", features = ["full"] }
 ```
 It can be used like this:
@@ -63,7 +63,7 @@ async fn main() -> Result<(), image_search::Error> {
 There is an optional "blocking" API that can be enabled:
 ```toml
 [dependencies]
-image_search = { version = "0.2", features = ["blocking"] }
+image_search = { version = "0.3", features = ["blocking"] }
 ```
 This is called like so:
 ```rust
@@ -84,4 +84,3 @@ fn main() -> Result<(), image_search::Error> {
     Ok(())
 }
 ```
-[`tokio`]: https://docs.rs/tokio/latest/tokio/
