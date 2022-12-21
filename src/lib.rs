@@ -100,8 +100,8 @@ pub struct Arguments {
     limit: usize,
     thumbnails: bool,
     timeout: Option<Duration>,
-
     directory: Option<PathBuf>,
+    
     color: Color,
     color_type: ColorType,
     license: License,
@@ -140,7 +140,7 @@ impl Arguments {
             query: query.to_owned(),
             limit: limit,
             thumbnails: false,
-            timeout: Some(Duration::from_secs(15)),
+            timeout: Some(Duration::from_secs(20)),
 
             directory: None,
             color: Color::None,
@@ -153,6 +153,8 @@ impl Arguments {
         }
     }
 
+    /// Sets the optional request timeout for the `download` function. Defaults to 20 seconds.
+    /// Not recomended to set to `None`, very rarely an image will fail to send data but not throw an error, causing the `download` function to never exit.
     pub fn timeout(mut self, timeout: Option<Duration>) -> Self {
         self.timeout = timeout;
         self
@@ -494,7 +496,7 @@ debug_display!(for Image, Arguments, Color, ColorType, License, ImageType, Time,
 /// }
 pub async fn search(args: Arguments) -> Result<Vec<Image>, Error> {
     let url = build_url(&args);
-    let body = match get(url, args.timeout.clone()).await {
+    let body = match get(url).await {
         Ok(b) => b,
         Err(e) => return Err(Error::Network(e)),
     };
@@ -743,16 +745,11 @@ fn build_url(args: &Arguments) -> String {
     url
 }
 
-async fn get(url: String, timeout: Option<Duration>) -> Result<String, reqwest::Error> {
+async fn get(url: String) -> Result<String, reqwest::Error> {
     let client = reqwest::Client::new();
     let agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36";
 
-    let builder = match timeout {
-        Some(t) => client.get(url).header("User-Agent", agent).timeout(t),
-        None => client.get(url).header("User-Agent", agent),
-    };
-
-    let resp = builder.send().await?;
+    let resp = client.get(url).header("User-Agent", agent).send().await?;
 
     Ok(resp.text().await?)
 }

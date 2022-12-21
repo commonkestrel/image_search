@@ -74,7 +74,7 @@ impl std::error::Error for Error {
 pub fn search(args: Arguments) -> Result<Vec<Image>, Error> {
     let url = build_url(&args);
 
-    let body = match get(url, args.timeout.clone()) {
+    let body = match get(url) {
         Ok(b) => b,
         Err(e) => return Err(Error::Network(e)),
     };
@@ -336,16 +336,11 @@ fn build_url(args: &Arguments) -> String {
     url
 }
 
-fn get(url: String, timeout: Option<Duration>) -> Result<String, reqwest::Error> {
+fn get(url: String) -> Result<String, reqwest::Error> {
     let client = reqwest::blocking::Client::new();
     let agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36";
 
-    let builder = match timeout {
-        Some(t) => client.get(url).header("User-Agent", agent).timeout(t),
-        None => client.get(url).header("User-Agent", agent),
-    };
-
-    let resp = builder.send()?;
+    let resp = client.get(url).header("User-Agent", agent).send()?;
 
     Ok(resp.text()?)
 }
