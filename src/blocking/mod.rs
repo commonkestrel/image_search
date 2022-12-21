@@ -2,16 +2,53 @@
 //! Due to the limitations of using only a single request to fetch images, only a max of about 100 images can be found per request.
 //! These images may be protected under copyright, and you shouldn't do anything punishable with them, like using them for commercial use.
 
+extern crate futures;
 extern crate glob;
 extern crate infer;
 extern crate reqwest;
 extern crate serde_json;
+extern crate tokio;
 
-use crate::{Arguments, DownloadError, Error, Image};
+use crate::{Arguments, DownloadError, Image};
+use futures::future;
 use std::env;
+use std::fmt;
 use std::fs::File;
+use std::io;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+#[derive(Debug)]
+pub enum Error {
+    Parse,
+    Dir(io::Error),
+    Network(reqwest::Error),
+    Runtime(tokio::io::Error),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Parse => write!(f, "Unable to parse images from json. Google may have changed the way their data is stored"),
+            Self::Dir(err) => write!(f, "Unable to find or create: {}", err),
+            Self::Network(err) => write!(f, "Unable to fetch webpage: {}", err),
+            Self::Runtime(err) => write!(f, "Unable to create Tokio runtime: {}", err),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn description(&self) -> &str {
+        match *self {
+            Self::Parse => "Unable to parse images from json",
+            Self::Dir(_) => "Error when finding or creating directory",
+            Self::Network(_) => "Error when making GET request",
+            Self::Runtime(_) => "Unable to create Tokio runtime",
+        }
+    }
+}
 
 /// Search for images based on the provided arguments and return images up to the provided limit.
 ///
@@ -24,19 +61,20 @@ use std::path::PathBuf;
 ///
 /// ```
 /// extern crate image_search;
-/// 
+///
 /// use image_search::Arguments;
 /// use image_search::blocking::search;
 ///
 /// fn main() -> Result<(), image_search::Error> {
 ///     let args = Arguments::new("cats", 10);
 ///     let images = search(args)?;
-/// 
+///
 ///     Ok(())
 /// }
 pub fn search(args: Arguments) -> Result<Vec<Image>, Error> {
     let url = build_url(&args);
-    let body = match get(url) {
+
+    let body = match get(url, args.timeout.clone()) {
         Ok(b) => b,
         Err(e) => return Err(Error::Network(e)),
     };
@@ -64,14 +102,14 @@ pub fn search(args: Arguments) -> Result<Vec<Image>, Error> {
 ///
 /// ```
 /// extern crate image_search;
-/// 
+///
 /// use image_search::Arguments;
 /// use image_search::blocking::urls;
 ///
 /// fn main() -> Result<(), image_search::Error> {
 ///     let args = Arguments::new("cats", 10);
 ///     let images = urls(args)?;
-/// 
+///
 ///     Ok(())
 /// }
 pub fn urls(args: Arguments) -> Result<Vec<String>, Error> {
@@ -101,7 +139,7 @@ pub fn urls(args: Arguments) -> Result<Vec<String>, Error> {
 ///
 /// ```
 /// extern crate image_search
-/// 
+///
 /// use image_search::Arguments;
 /// use image_search::blocking::download;
 /// use std::path::Path;
@@ -109,17 +147,18 @@ pub fn urls(args: Arguments) -> Result<Vec<String>, Error> {
 /// fn main() -> Result<(), image_search::Error> {
 ///     let args = Arguments::new("cats", 10).directory(Path::new("downloads"));
 ///     let paths = download(args)?;
-/// 
+///
 ///     Ok(())
 /// }
 pub fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
-    let query = &args.query.to_owned();
-    let directory = &args.directory.to_owned();
-    let images = urls(args)?;
+    let images = urls(Arguments {
+        query: args.query.clone(),
+        limit: 0,
+        directory: args.directory.clone(),
+        ..args
+    })?;
 
-    let client = reqwest::blocking::Client::new();
-
-    let dir = match directory {
+    let dir = match args.directory {
         Some(dir) => dir.to_owned(),
         None => match env::current_dir() {
             Ok(v) => v,
@@ -135,8 +174,8 @@ pub fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
 
     let mut suffix = 0;
     let mut paths: Vec<PathBuf> = Vec::new();
-    for url in images.iter() {
-        let mut path = dir.join(query.to_owned() + &suffix.to_string());
+    for _ in 0..args.limit {
+        let mut path = dir.join(args.query.to_owned() + &suffix.to_string());
 
         let all = glob::glob(&(path.display().to_string() + ".*")).unwrap();
         let mut matches = 0;
@@ -147,48 +186,132 @@ pub fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
         while matches > 0 {
             matches = 0;
             suffix += 1;
-            path = dir.join(query.to_owned() + &suffix.to_string());
+            path = dir.join(args.query.to_owned() + &suffix.to_string());
             let all = glob::glob(&(path.display().to_string() + ".*")).unwrap();
             for _ in all {
                 matches += 1;
             }
         }
+
+        paths.push(path);
         suffix += 1;
-
-        let with_extension = match download_image(&client, path, url.to_owned()) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-
-        paths.push(with_extension);
     }
 
-    Ok(paths)
+    let with_extensions = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => return Err(Error::Runtime(e)),
+    }
+    .block_on(download_n(images, paths, args.timeout));
+
+    Ok(with_extensions)
 }
 
-fn download_image(
-    client: &reqwest::blocking::Client,
-    mut path: PathBuf,
-    url: String,
+/// Trys to download
+async fn download_n(
+    urls: Vec<String>,
+    paths: Vec<PathBuf>,
+    timeout: Option<Duration>,
+) -> Vec<PathBuf> {
+    let mut_urls = Arc::new(Mutex::new(urls));
+
+    let mut downloaders = Vec::new();
+    let client = reqwest::Client::new();
+    for path in paths {
+        downloaders.push(download_until(
+            mut_urls.clone(),
+            path,
+            client.clone(),
+            timeout,
+        ));
+    }
+
+    let with_extensions = future::join_all(downloaders)
+        .await
+        .into_iter()
+        .filter_map(|x| x.ok())
+        .collect();
+
+    with_extensions
+}
+
+macro_rules! next_available {
+    ($urls:expr) => {{
+        let mut mut_urls = $urls.lock().unwrap();
+        if mut_urls.is_empty() {
+            return Err(DownloadError::Overflow);
+        }
+        let url = mut_urls.remove(0);
+        std::mem::drop(mut_urls);
+
+        url
+    }};
+}
+
+async fn download_until(
+    urls: Arc<Mutex<Vec<String>>>,
+    path: PathBuf,
+    client: reqwest::Client,
+    timeout: Option<Duration>,
 ) -> Result<PathBuf, DownloadError> {
-    let resp = match client.get(url).send() {
+    let mut url = next_available!(urls);
+
+    let with_extension = loop {
+        let with_extension = download_image(client.clone(), &path, url.to_owned(), timeout).await;
+        if with_extension.is_ok() {
+            break with_extension;
+        }
+        url = next_available!(urls);
+    };
+
+    with_extension
+}
+
+async fn download_image(
+    client: reqwest::Client,
+    path: &PathBuf,
+    url: String,
+    timeout: Option<Duration>,
+) -> Result<PathBuf, DownloadError> {
+    let builder = match timeout {
+        Some(t) => client.get(url).timeout(t),
+        None => client.get(url),
+    };
+
+    let resp = match builder.send().await {
         Ok(r) => r,
         Err(e) => return Err(DownloadError::Network(e)),
     };
 
-    let buf = match resp.bytes() {
+    let buf = match resp.bytes().await {
         Ok(b) => b,
         Err(e) => return Err(DownloadError::Network(e)),
     };
 
-    let kind = match infer::get(&buf) {
-        Some(k) => k,
-        None => return Err(DownloadError::Extension),
+    let first_256 = buf.iter().take(1024).map(|x| *x).collect::<Vec<u8>>();
+    let svg = match std::str::from_utf8(&first_256) {
+        Ok(s) => s.contains("<svg"),
+        Err(_) => false,
     };
 
-    path.set_extension(kind.extension());
+    let mut extension = "".to_string();
+    if svg {
+        extension += "svg";
+    } else {
+        let kind = match infer::get(&buf) {
+            Some(k) => k,
+            None => return Err(DownloadError::Extension),
+        };
 
-    let mut f = match File::create(&path) {
+        if kind.matcher_type() != infer::MatcherType::Image {
+            return Err(DownloadError::Extension);
+        }
+
+        extension += kind.extension();
+    }
+
+    let with_extension = path.clone().with_extension(extension);
+
+    let mut f = match File::create(&with_extension) {
         Ok(f) => f,
         Err(e) => return Err(DownloadError::Fs(e)),
     };
@@ -198,7 +321,7 @@ fn download_image(
         Err(e) => return Err(DownloadError::Fs(e)),
     };
 
-    Ok(path)
+    Ok(with_extension)
 }
 
 fn build_url(args: &Arguments) -> String {
@@ -213,11 +336,16 @@ fn build_url(args: &Arguments) -> String {
     url
 }
 
-fn get(url: String) -> Result<String, reqwest::Error> {
+fn get(url: String, timeout: Option<Duration>) -> Result<String, reqwest::Error> {
     let client = reqwest::blocking::Client::new();
     let agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36";
 
-    let resp = client.get(url).header("User-Agent", agent).send()?;
+    let builder = match timeout {
+        Some(t) => client.get(url).header("User-Agent", agent).timeout(t),
+        None => client.get(url).header("User-Agent", agent),
+    };
+
+    let resp = builder.send()?;
 
     Ok(resp.text()?)
 }
