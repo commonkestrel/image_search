@@ -23,9 +23,9 @@
 //!         .color(image_search::Color::Gray)
 //!         .directory(PathBuf::new("downloads")); // Only affects the download function
 //!     
-//!     let image_urls = urls(args.clone()).await?;
-//!     let images = search(args.clone()).await?;
-//!     let paths = download(args).await?;
+//!     let _image_urls = urls(args.clone()).await?;
+//!     let _images = search(args.clone()).await?;
+//!     let _paths = download(args).await?;
 //!
 //!     Ok(())
 //! }
@@ -49,9 +49,9 @@
 //!         .color(image_search::Color::Gray)
 //!         .directory(PathBuf::from("downloads")); // Only affects the download function
 //!     
-//!     let image_urls = urls(args.clone())?;
-//!     let images = search(args.clone())?;
-//!     let paths = download(args)?;
+//!     let _image_urls = urls(args.clone())?;
+//!     let _images = search(args.clone())?;
+//!     let _paths = download(args)?;
 //!
 //!     Ok(())
 //! }
@@ -151,11 +151,17 @@ impl Arguments {
             format: Format::None,
         }
     }
+    
+    /// Sets the directory the images will be downloaded to. Only used in the download function.
+    pub fn directory<P: Into<PathBuf>>(mut self, dir: P) -> Self {
+        self.directory = Some(dir.into());
+        self
+    }
 
     /// Sets the optional request timeout for the `download` function. Defaults to 20 seconds.
     /// Not recomended to set to `None`, very rarely an image will fail to send data but not throw an error, causing the `download` function to never exit.
-    pub fn timeout(mut self, timeout: Option<Duration>) -> Self {
-        self.timeout = timeout;
+    pub fn timeout<D: Into<Option<Duration>>>(mut self, timeout: D) -> Self {
+        self.timeout = timeout.into();
         self
     }
 
@@ -164,12 +170,6 @@ impl Arguments {
     /// Only affects the `urls` and `download` functions.
     pub fn thumbnails(mut self, thumb: bool) -> Self {
         self.thumbnails = thumb;
-        self
-    }
-
-    /// Sets the directory the images will be downloaded to. Only used in the download function.
-    pub fn directory(mut self, dir: PathBuf) -> Self {
-        self.directory = Some(dir);
         self
     }
 

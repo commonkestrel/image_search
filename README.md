@@ -44,16 +44,17 @@ extern crate tokio;
 extern crate image_search;
 
 use std::path::PathBuf;
-use image_search::{Arguments, urls, search};
+use image_search::{Arguments, Color, urls, search, download};
  
 #[tokio::main]
 async fn main() -> Result<(), image_search::Error> {
     let args = Arguments::new("example", 10)
-        .color(image_search::Color::Gray)
+        .color(Color::Gray)
         .directory(PathBuf::from("downloads")); // Only affects the download function
      
-    let image_urls = urls(args.clone()).await?;
-    let images = search(args.clone()).await?;
+    let _image_urls = urls(args.clone()).await?;
+    let _images = search(args.clone()).await?;
+    let _paths = download(args).await?;
  
     Ok(())
 }
@@ -70,16 +71,16 @@ This is called like so:
 extern crate image_search;
 
 use std::path::PathBuf;
-use image_search::{Arguments, blocking::{urls, search, download}};
+use image_search::{Arguments, Time, blocking::{urls, search, download}};
 
 fn main() -> Result<(), image_search::Error> {
     let args = Arguments::new("example", 10)
-        .color(image_search::Color::Gray)
+        .time(Time::Month)
         .directory(PathBuf::from("downloads")); // Only affects the download function
     
-    let image_urls = urls(args.clone())?;
-    let images = search(args.clone())?;
-    let paths = download(args)?;
+    let _image_urls = urls(args.clone())?;
+    let _images = search(args.clone())?;
+    let _paths = download(args)?;
 
     Ok(())
 }
