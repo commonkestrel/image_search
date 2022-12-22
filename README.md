@@ -1,4 +1,5 @@
-# Image Search
+![logo](https://raw.githubusercontent.com/Jibble330/image_search/master/misc/logo-white.png)
+# Google Image Search
 ![Crates.io](https://img.shields.io/crates/v/image_search) ![docs.rs](https://img.shields.io/docsrs/image_search) ![Crates.io](https://img.shields.io/crates/l/image_search)
 
 A crate designed to search Google Images based on provided arguments.
