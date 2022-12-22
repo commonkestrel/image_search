@@ -100,7 +100,7 @@ pub struct Arguments {
     thumbnails: bool,
     timeout: Option<Duration>,
     directory: Option<PathBuf>,
-    
+
     color: Color,
     color_type: ColorType,
     license: License,
@@ -137,7 +137,7 @@ impl Arguments {
     pub fn new(query: &str, limit: usize) -> Arguments {
         Arguments {
             query: query.to_owned(),
-            limit: limit,
+            limit,
             thumbnails: false,
             timeout: Some(Duration::from_secs(20)),
 
@@ -151,7 +151,7 @@ impl Arguments {
             format: Format::None,
         }
     }
-    
+
     /// Sets the directory the images will be downloaded to. Only used in the download function.
     pub fn directory<P: Into<PathBuf>>(mut self, dir: P) -> Self {
         self.directory = Some(dir.into());
