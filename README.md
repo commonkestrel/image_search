@@ -1,4 +1,4 @@
-<div align="center"><img src="https://raw.githubusercontent.com/Jibble330/image_search/master/misc/logo-white.png" width=640px></div>
+<div align="center"><img src="https://raw.githubusercontent.com/Jibble330/image_search/master/misc/logo-black.png" width=640px></div>
 
 # Google Image Search
 ![Crates.io](https://img.shields.io/crates/v/image_search) ![docs.rs](https://img.shields.io/docsrs/image_search) ![Crates.io](https://img.shields.io/crates/l/image_search)
