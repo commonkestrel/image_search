@@ -4,11 +4,11 @@
 extern crate futures;
 extern crate glob;
 extern crate infer;
-extern crate reqwest;
+extern crate hyper;
 extern crate serde_json;
 extern crate tokio;
 
-use crate::{Arguments, DownloadError, Image};
+use crate::{Arguments, SearchResult, Error, DownloadError, Image, get};
 use futures::future;
 use std::env;
 use std::fmt;
@@ -18,36 +18,6 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-
-#[derive(Debug)]
-pub enum Error {
-    Parse,
-    Dir(io::Error),
-    Network(reqwest::Error),
-    Runtime(tokio::io::Error),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Parse => write!(f, "Unable to parse images from json. Google may have changed the way their data is stored"),
-            Self::Dir(err) => write!(f, "Unable to find or create: {}", err),
-            Self::Network(err) => write!(f, "Unable to fetch webpage: {}", err),
-            Self::Runtime(err) => write!(f, "Unable to create Tokio runtime: {}", err),
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn description(&self) -> &str {
-        match *self {
-            Self::Parse => "Unable to parse images from json",
-            Self::Dir(_) => "Error when finding or creating directory",
-            Self::Network(_) => "Error when making GET request",
-            Self::Runtime(_) => "Unable to create Tokio runtime",
-        }
-    }
-}
 
 /// Search for images based on the provided arguments and return images up to the provided limit.
 ///
@@ -70,12 +40,16 @@ impl std::error::Error for Error {
 ///
 ///     Ok(())
 /// }
-pub fn search(args: Arguments) -> Result<Vec<Image>, Error> {
+pub fn search(args: Arguments) -> SearchResult<Vec<Image>> {
     let url = build_url(&args);
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(err) => return Err(Error::Runtime(err)),
+    };
 
-    let body = match get(url) {
+    let body = match rt.block_on(get(url)) {
         Ok(b) => b,
-        Err(e) => return Err(Error::Network(e)),
+        Err(e) => return Err(Error::from(e)),
     };
 
     let imgs = match unpack(body) {
@@ -111,7 +85,7 @@ pub fn search(args: Arguments) -> Result<Vec<Image>, Error> {
 ///
 ///     Ok(())
 /// }
-pub fn urls(args: Arguments) -> Result<Vec<String>, Error> {
+pub fn urls(args: Arguments) -> SearchResult<Vec<String>> {
     let thumbnails = (&args.thumbnails).to_owned();
     let images = search(args)?;
 
@@ -149,7 +123,7 @@ pub fn urls(args: Arguments) -> Result<Vec<String>, Error> {
 ///
 ///     Ok(())
 /// }
-pub fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
+pub fn download(args: Arguments) -> SearchResult<Vec<PathBuf>> {
     let images = urls(Arguments {
         query: args.query.clone(),
         limit: 0,
@@ -176,20 +150,18 @@ pub fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
     for _ in 0..args.limit {
         let mut path = dir.join(args.query.to_owned() + &suffix.to_string());
 
-        let all = glob::glob(&(path.display().to_string() + ".*")).unwrap();
-        let mut matches = 0;
-        for _ in all {
-            matches += 1;
-        }
+        let mut matches =  match glob::glob(&(path.display().to_string() + ".*")) {
+            Ok(paths) => paths.last().is_some(),
+            Err(_) => false,
+        };
 
-        while matches > 0 {
-            matches = 0;
+        while matches {
             suffix += 1;
             path = dir.join(args.query.to_owned() + &suffix.to_string());
-            let all = glob::glob(&(path.display().to_string() + ".*")).unwrap();
-            for _ in all {
-                matches += 1;
-            }
+            matches =  match glob::glob(&(path.display().to_string() + ".*")) {
+                Ok(paths) => paths.last().is_some(),
+                Err(_) => false,
+            };
         }
 
         paths.push(path);
@@ -214,7 +186,7 @@ async fn download_n(
     let mut_urls = Arc::new(Mutex::new(urls));
 
     let mut downloaders = Vec::new();
-    let client = reqwest::Client::new();
+    let client = hyper::Client::new();
     for path in paths {
         downloaders.push(download_until(
             mut_urls.clone(),
@@ -249,7 +221,7 @@ macro_rules! next_available {
 async fn download_until(
     urls: Arc<Mutex<Vec<String>>>,
     path: PathBuf,
-    client: reqwest::Client,
+    client: hyper::Client<hyper::client::HttpConnector>,
     timeout: Option<Duration>,
 ) -> Result<PathBuf, DownloadError> {
     let mut url = next_available!(urls);
@@ -266,22 +238,30 @@ async fn download_until(
 }
 
 async fn download_image(
-    client: reqwest::Client,
+    client: hyper::Client<hyper::client::HttpConnector>,
     path: &PathBuf,
     url: String,
     timeout: Option<Duration>,
 ) -> Result<PathBuf, DownloadError> {
-    let builder = match timeout {
-        Some(t) => client.get(url).timeout(t),
-        None => client.get(url),
+    let uri = match url.parse() {
+        Ok(u) => u,
+        Err(_) => return Err(DownloadError::Url),
     };
 
-    let resp = match builder.send().await {
+    let res = match timeout {
+        Some(t) => match tokio::time::timeout(t, client.get(uri)).await {
+            Ok(r) => r,
+            Err(err) => return Err(DownloadError::Timeout(t)),
+        },
+        None => client.get(uri).await,
+    };
+
+    let resp = match res {
         Ok(r) => r,
         Err(e) => return Err(DownloadError::Network(e)),
     };
 
-    let buf = match resp.bytes().await {
+    let buf = match hyper::body::to_bytes(resp.into_body()).await {
         Ok(b) => b,
         Err(e) => return Err(DownloadError::Network(e)),
     };
@@ -333,15 +313,6 @@ fn build_url(args: &Arguments) -> String {
     }
 
     url
-}
-
-fn get(url: String) -> Result<String, reqwest::Error> {
-    let client = reqwest::blocking::Client::new();
-    let agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36";
-
-    let resp = client.get(url).header("User-Agent", agent).send()?;
-
-    Ok(resp.text()?)
 }
 
 /// shorthand for unwrap_or_continue

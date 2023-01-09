@@ -63,7 +63,7 @@ pub mod blocking;
 extern crate futures;
 extern crate glob;
 extern crate infer;
-extern crate reqwest;
+extern crate hyper;
 extern crate serde_json;
 
 use std::env;
@@ -407,15 +407,19 @@ pub struct Image {
 pub enum Error {
     Parse,
     Dir(io::Error),
-    Network(reqwest::Error),
+    Runtime(tokio::io::Error),
+    Request(hyper::Error),
+    Builder(hyper::http::Error),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Parse => write!(f, "Unable to parse images from json. Google may have changed the way their data is stored"),
-            Self::Dir(err) => write!(f, "Unable to find or create: {}", err),
-            Self::Network(err) => write!(f, "Unable to fetch webpage: {}", err),
+            Self::Parse        => write!(f, "Unable to parse images from json. Google may have changed the way their data is stored"),
+            Self::Dir(err)     => write!(f, "Unable to find or create: {}", err),
+            Self::Runtime(err) => write!(f, "Unable to create Tokio runtime: {}", err),
+            Self::Request(err) => write!(f, "Unable to fetch webpage: {}", err),
+            Self::Builder(err) => write!(f, "Unable to construct Request from Builder: {}", err),
         }
     }
 }
@@ -423,27 +427,42 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn description(&self) -> &str {
         match *self {
-            Self::Parse => "Unable to parse images from json",
-            Self::Dir(_) => "Error when finding or creating directory",
-            Self::Network(_) => "Error when making GET request",
+            Self::Parse      => "Unable to parse images from json",
+            Self::Dir(_)     => "Error when finding or creating directory",
+            Self::Runtime(_) => "Unable to create Tokio runtime",
+            Self::Request(_) => "Error when making GET request",
+            Self::Builder(_) => "Error constructing Request from Builder",
+        }
+    }
+}
+
+impl From<NetworkError> for Error {
+    fn from(value: NetworkError) -> Self {
+        match value {
+            NetworkError::Request(err) => Error::Request(err),
+            NetworkError::Builder(err) => Error::Builder(err),
         }
     }
 }
 
 #[derive(Debug)]
 enum DownloadError {
+    Url,
     Overflow,
     Extension,
+    Timeout(Duration),
     Fs(std::io::Error),
-    Network(reqwest::Error),
+    Network(hyper::Error),
 }
 
 impl fmt::Display for DownloadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Overflow => write!(f, "Ran out of possible images"),
-            Self::Extension => write!(f, "Unable to determine file extension"),
-            Self::Fs(err) => write!(f, "Problem when creating or writing to file: {}", err),
+            Self::Url          => write!(f, "Invalid URL"),
+            Self::Overflow     => write!(f, "Ran out of possible images"),
+            Self::Extension    => write!(f, "Unable to determine file extension"),
+            Self::Timeout(dur) => write!(f, "GET request timed out after {}ms", dur.as_millis()),
+            Self::Fs(err)      => write!(f, "Problem when creating or writing to file: {}", err),
             Self::Network(err) => write!(f, "Unable to fetch image: {}", err),
         }
     }
@@ -452,13 +471,54 @@ impl fmt::Display for DownloadError {
 impl std::error::Error for DownloadError {
     fn description(&self) -> &str {
         match *self {
-            Self::Overflow => "Ran out of possible images",
-            Self::Extension => "File type not known or not an image",
-            Self::Fs(_) => "Error occured creating or writing to file",
+            Self::Url        => "Invalid URL",
+            Self::Overflow   => "Ran out of possible images",
+            Self::Extension  => "File type not known or not an image",
+            Self::Timeout(_) => "GET request timed out",
+            Self::Fs(_)      => "Error occured creating or writing to file",
             Self::Network(_) => "Error when making GET request to fetch image",
         }
     }
 }
+
+#[derive(Debug)]
+enum NetworkError {
+    Request(hyper::Error),
+    Builder(hyper::http::Error),
+    Encoding(),
+}
+
+impl fmt::Display for NetworkError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Request(err) => write!(f, "Error executing request: {}", err),
+            Self::Builder(err) => write!(f, "Failure constructing Request from Builder: {}", err),
+        }
+    }
+}
+
+impl std::error::Error for NetworkError {
+    fn description(&self) -> &str {
+        match *self {
+            Self::Request(_) => "Failure executing request",
+            Self::Builder(_) => "Failure constructing Request from Builder",
+        }
+    }
+}
+
+impl From<hyper::Error> for NetworkError {
+    fn from(value: hyper::Error) -> Self {
+        NetworkError::Request(value)
+    }
+}
+
+impl From<hyper::http::Error> for NetworkError {
+    fn from(value: hyper::http::Error) -> Self {
+        NetworkError::Builder(value)
+    }
+}
+
+pub type SearchResult<T> = Result<T, Error>;
 
 macro_rules! debug_display {
     (for $($t:ty),+) => {
@@ -497,7 +557,7 @@ pub async fn search(args: Arguments) -> Result<Vec<Image>, Error> {
     let url = build_url(&args);
     let body = match get(url).await {
         Ok(b) => b,
-        Err(e) => return Err(Error::Network(e)),
+        Err(e) => return Err(Error::from(e)),
     };
 
     let imgs = match unpack(body) {
@@ -602,20 +662,18 @@ pub async fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
     for _ in 0..args.limit {
         let mut path = dir.join(args.query.to_owned() + &suffix.to_string());
 
-        let all = glob::glob(&(path.display().to_string() + ".*")).unwrap();
-        let mut matches = 0;
-        for _ in all {
-            matches += 1;
-        }
+        let mut matches =  match glob::glob(&(path.display().to_string() + ".*")) {
+            Ok(paths) => paths.last().is_some(),
+            Err(_) => false,
+        };
 
-        while matches > 0 {
-            matches = 0;
+        while matches {
             suffix += 1;
             path = dir.join(args.query.to_owned() + &suffix.to_string());
-            let all = glob::glob(&(path.display().to_string() + ".*")).unwrap();
-            for _ in all {
-                matches += 1;
-            }
+            matches =  match glob::glob(&(path.display().to_string() + ".*")) {
+                Ok(paths) => paths.last().is_some(),
+                Err(_) => false,
+            };
         }
 
         paths.push(path);
@@ -657,7 +715,7 @@ async fn download_n(
 
 macro_rules! next_available {
     ($urls:expr) => {{
-        let mut mut_urls = $urls.lock().unwrap();
+        let mut mut_urls = $urls.lock().expect("Other downloading thread panicked"); // Safe: no thread should panic while holding, since this is the only unwrap/expect
         if mut_urls.is_empty() {
             return Err(DownloadError::Overflow);
         }
@@ -744,13 +802,16 @@ fn build_url(args: &Arguments) -> String {
     url
 }
 
-async fn get(url: String) -> Result<String, reqwest::Error> {
-    let client = reqwest::Client::new();
-    let agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36";
+async fn get(url: String) -> Result<String, NetworkError> {
+    let client = hyper::Client::new();
+    const AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36";
+    let req = hyper::Request::get(url)
+        .header("User-Agent", AGENT)
+        .body(hyper::Body::from(""))?;
 
-    let resp = client.get(url).header("User-Agent", agent).send().await?;
+    let resp = client.request(req).await;
 
-    Ok(resp.text().await?)
+    Ok(String::from(hyper::body::to_bytes(resp.into_body()).await?))
 }
 
 /// shorthand for unwrap_or_continue
