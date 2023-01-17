@@ -4,16 +4,13 @@
 extern crate futures;
 extern crate glob;
 extern crate infer;
-extern crate hyper;
 extern crate serde_json;
-extern crate tokio;
+extern crate surf;
 
-use crate::{Arguments, SearchResult, Error, DownloadError, Image, get};
+use crate::{get, Arguments, DownloadError, Error, Image, SearchResult};
 use futures::future;
 use std::env;
-use std::fmt;
 use std::fs::File;
-use std::io;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -42,20 +39,10 @@ use std::time::Duration;
 /// }
 pub fn search(args: Arguments) -> SearchResult<Vec<Image>> {
     let url = build_url(&args);
-    let rt = match tokio::runtime::Runtime::new() {
-        Ok(rt) => rt,
-        Err(err) => return Err(Error::Runtime(err)),
-    };
 
-    let body = match rt.block_on(get(url)) {
-        Ok(b) => b,
-        Err(e) => return Err(Error::from(e)),
-    };
+    let body = async_std::task::block_on(get(url))?;
 
-    let imgs = match unpack(body) {
-        Some(i) => i,
-        None => return Err(Error::Parse),
-    };
+    let imgs = unpack(body).ok_or(Error::Parse)?;
 
     if imgs.len() > args.limit && args.limit > 0 {
         Ok(imgs[..args.limit].to_vec())
@@ -150,7 +137,7 @@ pub fn download(args: Arguments) -> SearchResult<Vec<PathBuf>> {
     for _ in 0..args.limit {
         let mut path = dir.join(args.query.to_owned() + &suffix.to_string());
 
-        let mut matches =  match glob::glob(&(path.display().to_string() + ".*")) {
+        let mut matches = match glob::glob(&(path.display().to_string() + ".*")) {
             Ok(paths) => paths.last().is_some(),
             Err(_) => false,
         };
@@ -158,7 +145,7 @@ pub fn download(args: Arguments) -> SearchResult<Vec<PathBuf>> {
         while matches {
             suffix += 1;
             path = dir.join(args.query.to_owned() + &suffix.to_string());
-            matches =  match glob::glob(&(path.display().to_string() + ".*")) {
+            matches = match glob::glob(&(path.display().to_string() + ".*")) {
                 Ok(paths) => paths.last().is_some(),
                 Err(_) => false,
             };
@@ -168,16 +155,12 @@ pub fn download(args: Arguments) -> SearchResult<Vec<PathBuf>> {
         suffix += 1;
     }
 
-    let with_extensions = match tokio::runtime::Runtime::new() {
-        Ok(rt) => rt,
-        Err(e) => return Err(Error::Runtime(e)),
-    }
-    .block_on(download_n(images, paths, args.timeout));
+    let with_extensions = async_std::task::block_on(download_n(images, paths, args.timeout));
 
     Ok(with_extensions)
 }
 
-/// Trys to download
+/// Downloads up to n images concurrently
 async fn download_n(
     urls: Vec<String>,
     paths: Vec<PathBuf>,
@@ -186,7 +169,7 @@ async fn download_n(
     let mut_urls = Arc::new(Mutex::new(urls));
 
     let mut downloaders = Vec::new();
-    let client = hyper::Client::new();
+    let client = surf::Client::new();
     for path in paths {
         downloaders.push(download_until(
             mut_urls.clone(),
@@ -207,7 +190,7 @@ async fn download_n(
 
 macro_rules! next_available {
     ($urls:expr) => {{
-        let mut mut_urls = $urls.lock().unwrap();
+        let mut mut_urls = $urls.lock().unwrap(); // Safe: no thread should panic while holding, since this is the only unwrap/expect
         if mut_urls.is_empty() {
             return Err(DownloadError::Overflow);
         }
@@ -218,10 +201,11 @@ macro_rules! next_available {
     }};
 }
 
+/// Trys to download an image to a given path until one is successful or it runs out of possible urls
 async fn download_until(
     urls: Arc<Mutex<Vec<String>>>,
     path: PathBuf,
-    client: hyper::Client<hyper::client::HttpConnector>,
+    client: surf::Client,
     timeout: Option<Duration>,
 ) -> Result<PathBuf, DownloadError> {
     let mut url = next_available!(urls);
@@ -238,43 +222,26 @@ async fn download_until(
 }
 
 async fn download_image(
-    client: hyper::Client<hyper::client::HttpConnector>,
+    client: surf::Client,
     path: &PathBuf,
     url: String,
     timeout: Option<Duration>,
 ) -> Result<PathBuf, DownloadError> {
-    let uri = match url.parse() {
-        Ok(u) => u,
-        Err(_) => return Err(DownloadError::Url),
-    };
+    let buf = match timeout {
+        Some(duration) => {
+            async_std::future::timeout(duration, client.recv_bytes(surf::get(url))).await?
+        }
+        None => client.recv_bytes(surf::get(url)).await,
+    }?;
 
-    let res = match timeout {
-        Some(t) => match tokio::time::timeout(t, client.get(uri)).await {
-            Ok(r) => r,
-            Err(err) => return Err(DownloadError::Timeout(t)),
-        },
-        None => client.get(uri).await,
-    };
-
-    let resp = match res {
-        Ok(r) => r,
-        Err(e) => return Err(DownloadError::Network(e)),
-    };
-
-    let buf = match hyper::body::to_bytes(resp.into_body()).await {
-        Ok(b) => b,
-        Err(e) => return Err(DownloadError::Network(e)),
-    };
-
-    let first_256 = buf.iter().take(1024).map(|x| *x).collect::<Vec<u8>>();
-    let svg = match std::str::from_utf8(&first_256) {
+    let first_128 = buf.iter().take(1024).map(|x| *x).collect::<Vec<u8>>();
+    let svg = match std::str::from_utf8(&first_128) {
         Ok(s) => s.contains("<svg"),
         Err(_) => false,
     };
 
-    let mut extension = "".to_string();
-    if svg {
-        extension += "svg";
+    let extension = if svg {
+        "svg".to_owned()
     } else {
         let kind = match infer::get(&buf) {
             Some(k) => k,
@@ -285,8 +252,8 @@ async fn download_image(
             return Err(DownloadError::Extension);
         }
 
-        extension += kind.extension();
-    }
+        kind.extension().to_owned()
+    };
 
     let with_extension = path.clone().with_extension(extension);
 
@@ -373,8 +340,7 @@ fn unpack(mut body: String) -> Option<Vec<Image>> {
             width,
             height,
             thumbnail: uoc!(uoc!(inner[2].as_array())[0].as_str()).to_string(),
-            source: uoc!(uoc!(uoc!(inner[22].as_object())["2003"].as_array())[2].as_str())
-                .to_string(),
+            source: uoc!(uoc!(uoc!(inner[23].as_object())["2003"].as_array())[2].as_str()).to_string(),
         };
 
         images.push(image);

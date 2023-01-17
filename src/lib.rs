@@ -63,8 +63,8 @@ pub mod blocking;
 extern crate futures;
 extern crate glob;
 extern crate infer;
-extern crate hyper;
 extern crate serde_json;
+extern crate surf;
 
 use std::env;
 use std::fmt;
@@ -407,9 +407,7 @@ pub struct Image {
 pub enum Error {
     Parse,
     Dir(io::Error),
-    Runtime(tokio::io::Error),
-    Request(hyper::Error),
-    Builder(hyper::http::Error),
+    Network(surf::Error),
 }
 
 impl fmt::Display for Error {
@@ -417,9 +415,7 @@ impl fmt::Display for Error {
         match self {
             Self::Parse        => write!(f, "Unable to parse images from json. Google may have changed the way their data is stored"),
             Self::Dir(err)     => write!(f, "Unable to find or create: {}", err),
-            Self::Runtime(err) => write!(f, "Unable to create Tokio runtime: {}", err),
-            Self::Request(err) => write!(f, "Unable to fetch webpage: {}", err),
-            Self::Builder(err) => write!(f, "Unable to construct Request from Builder: {}", err),
+            Self::Network(err) => write!(f, "GET request failed: {}", err),
         }
     }
 }
@@ -427,42 +423,41 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn description(&self) -> &str {
         match *self {
-            Self::Parse      => "Unable to parse images from json",
-            Self::Dir(_)     => "Error when finding or creating directory",
-            Self::Runtime(_) => "Unable to create Tokio runtime",
-            Self::Request(_) => "Error when making GET request",
-            Self::Builder(_) => "Error constructing Request from Builder",
+            Self::Parse => "Unable to parse images from json",
+            Self::Dir(_) => "Error when finding or creating directory",
+            Self::Network(_) => "Failed to make GET request",
         }
     }
 }
 
-impl From<NetworkError> for Error {
-    fn from(value: NetworkError) -> Self {
-        match value {
-            NetworkError::Request(err) => Error::Request(err),
-            NetworkError::Builder(err) => Error::Builder(err),
-        }
+impl From<io::Error> for Error {
+    fn from(value: io::Error) -> Self {
+        Self::Dir(value)
+    }
+}
+
+impl From<surf::Error> for Error {
+    fn from(value: surf::Error) -> Self {
+        Self::Network(value)
     }
 }
 
 #[derive(Debug)]
 enum DownloadError {
-    Url,
     Overflow,
     Extension,
-    Timeout(Duration),
+    Timeout,
     Fs(std::io::Error),
-    Network(hyper::Error),
+    Network(surf::Error),
 }
 
 impl fmt::Display for DownloadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Url          => write!(f, "Invalid URL"),
-            Self::Overflow     => write!(f, "Ran out of possible images"),
-            Self::Extension    => write!(f, "Unable to determine file extension"),
-            Self::Timeout(dur) => write!(f, "GET request timed out after {}ms", dur.as_millis()),
-            Self::Fs(err)      => write!(f, "Problem when creating or writing to file: {}", err),
+            Self::Overflow => write!(f, "Ran out of possible images"),
+            Self::Extension => write!(f, "Unable to determine file extension"),
+            Self::Timeout => write!(f, "GET request timed out"),
+            Self::Fs(err) => write!(f, "Problem when creating or writing to file: {}", err),
             Self::Network(err) => write!(f, "Unable to fetch image: {}", err),
         }
     }
@@ -471,50 +466,30 @@ impl fmt::Display for DownloadError {
 impl std::error::Error for DownloadError {
     fn description(&self) -> &str {
         match *self {
-            Self::Url        => "Invalid URL",
-            Self::Overflow   => "Ran out of possible images",
-            Self::Extension  => "File type not known or not an image",
-            Self::Timeout(_) => "GET request timed out",
-            Self::Fs(_)      => "Error occured creating or writing to file",
+            Self::Overflow => "Ran out of possible images",
+            Self::Extension => "File type not known or not an image",
+            Self::Timeout => "GET request timed out",
+            Self::Fs(_) => "Error occured creating or writing to file",
             Self::Network(_) => "Error when making GET request to fetch image",
         }
     }
 }
 
-#[derive(Debug)]
-enum NetworkError {
-    Request(hyper::Error),
-    Builder(hyper::http::Error),
-    Encoding(),
-}
-
-impl fmt::Display for NetworkError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Request(err) => write!(f, "Error executing request: {}", err),
-            Self::Builder(err) => write!(f, "Failure constructing Request from Builder: {}", err),
-        }
+impl From<async_std::future::TimeoutError> for DownloadError {
+    fn from(_: async_std::future::TimeoutError) -> Self {
+        Self::Timeout
     }
 }
 
-impl std::error::Error for NetworkError {
-    fn description(&self) -> &str {
-        match *self {
-            Self::Request(_) => "Failure executing request",
-            Self::Builder(_) => "Failure constructing Request from Builder",
-        }
+impl From<std::io::Error> for DownloadError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Fs(value)
     }
 }
 
-impl From<hyper::Error> for NetworkError {
-    fn from(value: hyper::Error) -> Self {
-        NetworkError::Request(value)
-    }
-}
-
-impl From<hyper::http::Error> for NetworkError {
-    fn from(value: hyper::http::Error) -> Self {
-        NetworkError::Builder(value)
+impl From<surf::Error> for DownloadError {
+    fn from(value: surf::Error) -> Self {
+        Self::Network(value)
     }
 }
 
@@ -555,10 +530,7 @@ debug_display!(for Image, Arguments, Color, ColorType, License, ImageType, Time,
 /// }
 pub async fn search(args: Arguments) -> Result<Vec<Image>, Error> {
     let url = build_url(&args);
-    let body = match get(url).await {
-        Ok(b) => b,
-        Err(e) => return Err(Error::from(e)),
-    };
+    let body = get(url).await?;
 
     let imgs = match unpack(body) {
         Some(i) => i,
@@ -662,7 +634,7 @@ pub async fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
     for _ in 0..args.limit {
         let mut path = dir.join(args.query.to_owned() + &suffix.to_string());
 
-        let mut matches =  match glob::glob(&(path.display().to_string() + ".*")) {
+        let mut matches = match glob::glob(&(path.display().to_string() + ".*")) {
             Ok(paths) => paths.last().is_some(),
             Err(_) => false,
         };
@@ -670,7 +642,7 @@ pub async fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
         while matches {
             suffix += 1;
             path = dir.join(args.query.to_owned() + &suffix.to_string());
-            matches =  match glob::glob(&(path.display().to_string() + ".*")) {
+            matches = match glob::glob(&(path.display().to_string() + ".*")) {
                 Ok(paths) => paths.last().is_some(),
                 Err(_) => false,
             };
@@ -694,7 +666,7 @@ async fn download_n(
     let mut_urls = Arc::new(Mutex::new(urls));
 
     let mut downloaders = Vec::new();
-    let client = reqwest::Client::new();
+    let client = surf::Client::new();
     for path in paths {
         downloaders.push(download_until(
             mut_urls.clone(),
@@ -729,7 +701,7 @@ macro_rules! next_available {
 async fn download_until(
     urls: Arc<Mutex<Vec<String>>>,
     path: PathBuf,
-    client: reqwest::Client,
+    client: surf::Client,
     timeout: Option<Duration>,
 ) -> Result<PathBuf, DownloadError> {
     let mut url = next_available!(urls);
@@ -746,36 +718,40 @@ async fn download_until(
 }
 
 async fn download_image(
-    client: reqwest::Client,
+    client: surf::Client,
     path: &PathBuf,
     url: String,
     timeout: Option<Duration>,
 ) -> Result<PathBuf, DownloadError> {
-    let builder = match timeout {
-        Some(t) => client.get(url).timeout(t),
-        None => client.get(url),
+    let buf = match timeout {
+        Some(duration) => {
+            async_std::future::timeout(duration, client.recv_bytes(surf::get(url))).await?
+        }
+        None => client.recv_bytes(surf::get(url)).await,
+    }?;
+
+    let first_128 = buf.iter().take(1024).map(|x| *x).collect::<Vec<u8>>();
+    let svg = match std::str::from_utf8(&first_128) {
+        Ok(s) => s.contains("<svg"),
+        Err(_) => false,
     };
 
-    let resp = match builder.send().await {
-        Ok(r) => r,
-        Err(e) => return Err(DownloadError::Network(e)),
+    let extension = if svg {
+        "svg".to_owned()
+    } else {
+        let kind = match infer::get(&buf) {
+            Some(k) => k,
+            None => return Err(DownloadError::Extension),
+        };
+
+        if kind.matcher_type() != infer::MatcherType::Image {
+            return Err(DownloadError::Extension);
+        }
+
+        kind.extension().to_owned()
     };
 
-    let buf = match resp.bytes().await {
-        Ok(b) => b,
-        Err(e) => return Err(DownloadError::Network(e)),
-    };
-
-    let kind = match infer::get(&buf) {
-        Some(k) => k,
-        None => return Err(DownloadError::Extension),
-    };
-
-    if kind.matcher_type() != infer::MatcherType::Image {
-        return Err(DownloadError::Extension);
-    }
-
-    let with_extension = path.clone().with_extension(kind.extension());
+    let with_extension = path.clone().with_extension(extension);
 
     let mut f = match File::create(&with_extension) {
         Ok(f) => f,
@@ -802,16 +778,8 @@ fn build_url(args: &Arguments) -> String {
     url
 }
 
-async fn get(url: String) -> Result<String, NetworkError> {
-    let client = hyper::Client::new();
-    const AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36";
-    let req = hyper::Request::get(url)
-        .header("User-Agent", AGENT)
-        .body(hyper::Body::from(""))?;
-
-    let resp = client.request(req).await;
-
-    Ok(String::from(hyper::body::to_bytes(resp.into_body()).await?))
+async fn get(url: String) -> Result<String, surf::Error> {
+    Ok(surf::get(url).header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36").recv_string().await?)
 }
 
 /// shorthand for unwrap_or_continue
@@ -872,7 +840,7 @@ fn unpack(mut body: String) -> Option<Vec<Image>> {
             width,
             height,
             thumbnail: uoc!(uoc!(inner[2].as_array())[0].as_str()).to_string(),
-            source: uoc!(uoc!(uoc!(inner[22].as_object())["2003"].as_array())[2].as_str())
+            source: uoc!(uoc!(uoc!(inner[23].as_object())["2003"].as_array())[2].as_str())
                 .to_string(),
         };
 

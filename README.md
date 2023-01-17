@@ -87,3 +87,16 @@ fn main() -> Result<(), image_search::Error> {
     Ok(())
 }
 ```
+
+# Clients
+This crate uses [`surf`](https://crates.io/crates/surf) for HTTP requests in order to allow for the customization of the client used for HTTP requests.
+This can allow programs to interface with C via CURL, pure Rust via [`hyper`](https://crates.io/crates/hyper) or [`async-h1`](https://crates.io/crates/async-h1), or even WASM.
+As with [`surf`](https://crates.io/crates/surf), the client used can be customized via features.
+In order to change you will have to set `default-features=false` in your Cargo.toml, since `curl` is used by default.
+The possible backends are listed here:
+- **`curl` (default)**: Uses `CURL` through `isahc` as the HTTP backend.
+- **`hyper`**: Uses `hyper` as the HTTP backend.
+- **`wasm`**: Uses `window.fetch` as the HTTP backend.
+- **`h1`**: Uses `async-h1` as the HTTP backend with native TLS for HTTPS.
+- **`rustls`**: Uses `async-h1` as the HTTP backend with `rustls` for HTTPS.
+
