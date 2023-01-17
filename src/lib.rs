@@ -60,11 +60,12 @@
 #[cfg(feature = "blocking")]
 pub mod blocking;
 
-extern crate futures;
 extern crate glob;
-extern crate infer;
-extern crate serde_json;
 extern crate surf;
+extern crate infer;
+extern crate futures;
+extern crate async_std;
+extern crate serde_json;
 
 use std::env;
 use std::fmt;

@@ -1,11 +1,12 @@
 //! `image_search::blocking` is an optional feature that contains all the original capabilities of the non-blocking counterpart, but synchronous instead of async.
 //! Similar to [`reqwest`](https://crates.io/crates/reqwest)'s blocking feature
 
-extern crate futures;
 extern crate glob;
-extern crate infer;
-extern crate serde_json;
 extern crate surf;
+extern crate infer;
+extern crate futures;
+extern crate async_std;
+extern crate serde_json;
 
 use crate::{get, Arguments, DownloadError, Error, Image, SearchResult};
 use futures::future;
