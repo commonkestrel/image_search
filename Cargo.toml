@@ -1,12 +1,13 @@
 [package]
 name = "image_search"
-authors = ["jibble330"]
+authors = ["CommonKestrel"]
 version = "0.4.0"
 edition = "2021"
 license = "MIT"
-keywords = ["google", "images", "image", "search"]
+categories = ["asynchronous", "network-programming", "web-programming"]
+keywords = ["google", "image", "search", "async"]
 description = "A crate designed to search Google Images based on provided arguments."
-repository = "https://www.github.com/jibble330/image_search"
+repository = "https://www.github.com/commonkestrel/image_search"
 homepage = "http://www.pseudoservices.com/gis"
 readme = "README.md"
 exclude = ["/misc"]
