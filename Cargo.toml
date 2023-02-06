@@ -7,8 +7,8 @@ license = "MIT"
 categories = ["asynchronous", "network-programming", "web-programming"]
 keywords = ["google", "image", "search", "async"]
 description = "A crate designed to search Google Images based on provided arguments."
-repository = "https://www.github.com/commonkestrel/image_search"
-homepage = "http://www.pseudoservices.com/gis"
+repository = "https://github.com/commonkestrel/image_search"
+homepage = "https://pseudoservices.com/gis"
 readme = "README.md"
 exclude = ["/misc"]
 
