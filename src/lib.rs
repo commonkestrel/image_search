@@ -23,8 +23,11 @@
 //!         .color(image_search::Color::Gray)
 //!         .directory(PathBuf::new("downloads")); // Only affects the download function
 //!     
+//!     // Returns the urls of the search results
 //!     let _image_urls = urls(args.clone()).await?;
+//!     // Returns the search results as Image structs
 //!     let _images = search(args.clone()).await?;
+//!     // Downloads the search results and returns the paths to the files
 //!     let _paths = download(args).await?;
 //!
 //!     Ok(())
