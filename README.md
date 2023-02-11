@@ -94,8 +94,8 @@ This can allow programs to interface with C via CURL, pure Rust via [`hyper`](ht
 As with [`surf`](https://crates.io/crates/surf), the client used can be customized via features.
 In order to change you will have to set `default-features=false` in your Cargo.toml, since `curl` is used by default.
 The possible backends are listed here:
-- **`curl` (default)**: Uses `CURL` through `isahc` as the HTTP backend.
-- **`hyper`**: Uses `hyper` as the HTTP backend.
+- **`curl`**: Uses `CURL` through `isahc` as the HTTP backend.
+- **`hyper` (default)**: Uses `hyper` as the HTTP backend.
 - **`wasm`**: Uses `window.fetch` as the HTTP backend.
 - **`h1`**: Uses `async-h1` as the HTTP backend with native TLS for HTTPS.
 - **`rustls`**: Uses `async-h1` as the HTTP backend with `rustls` for HTTPS.
