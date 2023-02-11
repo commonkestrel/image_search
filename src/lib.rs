@@ -529,7 +529,7 @@ debug_display!(for Image, Arguments, Color, ColorType, License, ImageType, Time,
 ///
 ///     Ok(())
 /// }
-pub async fn search(args: Arguments) -> Result<Vec<Image>, Error> {
+pub async fn search(args: Arguments) -> SearchResult<Vec<Image>> {
     let url = build_url(&args);
     let body = get(url).await?;
 
@@ -567,7 +567,7 @@ pub async fn search(args: Arguments) -> Result<Vec<Image>, Error> {
 ///
 ///     Ok(())
 /// }
-pub async fn urls(args: Arguments) -> Result<Vec<String>, Error> {
+pub async fn urls(args: Arguments) -> SearchResult<Vec<String>> {
     let thumbnails = (&args.thumbnails).to_owned();
     let images = search(args).await?;
 
@@ -607,7 +607,7 @@ pub async fn urls(args: Arguments) -> Result<Vec<String>, Error> {
 ///
 ///     Ok(())
 /// }
-pub async fn download(args: Arguments) -> Result<Vec<PathBuf>, Error> {
+pub async fn download(args: Arguments) -> SearchResult<Vec<PathBuf>> {
     let images = urls(Arguments {
         query: args.query.clone(),
         limit: 0,
@@ -688,7 +688,7 @@ async fn download_n(
 
 macro_rules! next_available {
     ($urls:expr) => {{
-        let mut mut_urls = $urls.lock().expect("Other downloading thread panicked"); // Safe: no thread should panic while holding, since this is the only unwrap/expect
+        let mut mut_urls = $urls.lock().expect("Other downloading thread panicked"); // SAFETY: no thread should panic while holding, since this is the only unwrap/expect
         if mut_urls.is_empty() {
             return Err(DownloadError::Overflow);
         }
