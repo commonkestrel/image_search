@@ -37,7 +37,7 @@ They are used via the various methods on the `Arguments` struct. Each argument i
 Using the asynchronous API requires some sort of async runtime, usually [`tokio`](https://crates.io/crates/tokio), which can be added to your `Cargo.toml` like so:
 ```toml
 [dependencies]
-image_search = "0.3"
+image_search = "0.4"
 tokio = { version = "1", features = ["full"] }
 ```
 It can be used like this:
@@ -66,7 +66,7 @@ async fn main() -> Result<(), image_search::Error> {
 There is an optional "blocking" API that can be enabled:
 ```toml
 [dependencies]
-image_search = { version = "0.3", features = ["blocking"] }
+image_search = { version = "0.4", features = ["blocking"] }
 ```
 This is called like so:
 ```rust
