@@ -6,7 +6,7 @@
 //! Using the asynchronous API requires some sort of async runtime, usually [`tokio`](https://crates.io/crates/tokio), which can be added to your `Cargo.toml` like so:
 //! ```
 //! [dependencies]
-//! image_search = "0.3"
+//! image_search = "0.4"
 //! tokio = { version = "1", features = ["full"] }
 //! ```
 //! It can be used like this:
@@ -38,7 +38,7 @@
 //! There is an optional "blocking" API that can be enabled:
 //! ```
 //! [dependencies]
-//! image_search = { version = "0.3", features = ["blocking"] }
+//! image_search = { version = "0.4", features = ["blocking"] }
 //! ```
 //! This is called like so:
 //! ```
@@ -533,6 +533,19 @@ debug_display!(for Image, Arguments, Color, ColorType, License, ImageType, Time,
 ///     Ok(())
 /// }
 pub async fn search(args: Arguments) -> SearchResult<Vec<Image>> {
+    async_std::task::spawn(_search(args)).await
+}
+
+/// Search for images based on the provided arguments and return images up to the provided limit.
+///
+/// Must be called with [async_std::task::spawn] or with a [Tokio 0.2.x runtime](https://crates.io/crates/tokio/0.2.25).
+/// This is because [http-client](https://crates.io/crates/http-client) uses Tokio 0.2 for the hyper client.
+/// 
+/// # Errors
+/// This function will return an error if:
+/// * The GET request fails
+/// * The images are not able to be parsed
+async fn _search(args: Arguments) -> SearchResult<Vec<Image>> {
     let url = build_url(&args);
     let body = get(url).await?;
 
@@ -611,6 +624,20 @@ pub async fn urls(args: Arguments) -> SearchResult<Vec<String>> {
 ///     Ok(())
 /// }
 pub async fn download(args: Arguments) -> SearchResult<Vec<PathBuf>> {
+    async_std::task::spawn(_download(args)).await
+}
+
+/// Search for images based on the provided `Arguments` and downloads them to the path specified in the `directory` field in `Arguments`, or the "images" folder if none is provided.
+///
+/// Must be called with [async_std::task::spawn] or with a [Tokio 0.2.x runtime](https://crates.io/crates/tokio/0.2.25).
+/// This is because [http-client](https://crates.io/crates/http-client) uses Tokio 0.2 for the hyper client.
+/// 
+/// # Errors
+/// This function will return an error if:
+/// * The GET request fails
+/// * The images are not able to be parsed
+/// * The program is unable to create/read/write to files or directories
+async fn _download(args: Arguments) -> SearchResult<Vec<PathBuf>> {
     let images = urls(Arguments {
         query: args.query.clone(),
         limit: 0,
