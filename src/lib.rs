@@ -821,7 +821,10 @@ async fn get(url: String) -> Result<String, surf::Error> {
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36").await?;
         let status = res.status();
         if status != 200 {
-            return Err(surf::Error::from_str(status, "GET request failed"));
+            return Err(surf::Error::from_str(
+                status,
+                format!("GET request failed for {}", location),
+            ));
         }
         return res.body_string().await;
     }
