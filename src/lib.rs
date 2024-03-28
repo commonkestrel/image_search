@@ -63,12 +63,12 @@
 #[cfg(feature = "blocking")]
 pub mod blocking;
 
-extern crate glob;
-extern crate surf;
-extern crate infer;
-extern crate futures;
 extern crate async_std;
+extern crate futures;
+extern crate glob;
+extern crate infer;
 extern crate serde_json;
+extern crate surf;
 
 use std::env;
 use std::fmt;
@@ -540,7 +540,7 @@ pub async fn search(args: Arguments) -> SearchResult<Vec<Image>> {
 ///
 /// Must be called with [async_std::task::spawn] or with a [Tokio 0.2.x runtime](https://crates.io/crates/tokio/0.2.25).
 /// This is because [http-client](https://crates.io/crates/http-client) uses Tokio 0.2 for the hyper client.
-/// 
+///
 /// # Errors
 /// This function will return an error if:
 /// * The GET request fails
@@ -631,7 +631,7 @@ pub async fn download(args: Arguments) -> SearchResult<Vec<PathBuf>> {
 ///
 /// Must be called with [async_std::task::spawn] or with a [Tokio 0.2.x runtime](https://crates.io/crates/tokio/0.2.25).
 /// This is because [http-client](https://crates.io/crates/http-client) uses Tokio 0.2 for the hyper client.
-/// 
+///
 /// # Errors
 /// This function will return an error if:
 /// * The GET request fails
@@ -810,10 +810,22 @@ fn build_url(args: &Arguments) -> String {
 }
 
 async fn get(url: String) -> Result<String, surf::Error> {
-    Ok(surf::get(url)
+    let mut res = surf::get(url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36")
-        .recv_string()
-        .await?)
+        .await?;
+    let status = res.status();
+    if status == 302 {
+        let location = res.header("Location").unwrap();
+        let location = location.as_str();
+        let mut res = surf::get(location)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36").await?;
+        let status = res.status();
+        if status != 200 {
+            return Err(surf::Error::from_str(status, "GET request failed"));
+        }
+        return res.body_string().await;
+    }
+    res.body_string().await
 }
 
 /// shorthand for unwrap_or_continue
