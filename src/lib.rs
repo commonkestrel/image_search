@@ -810,20 +810,19 @@ fn build_url(args: &Arguments) -> String {
 }
 
 async fn get(url: String) -> Result<String, surf::Error> {
-    let mut res = surf::get(url)
+    let mut res = surf::get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36")
         .await?;
     let status = res.status();
     if status == 302 {
-        let location = res.header("Location").unwrap();
-        let location = location.as_str();
-        let mut res = surf::get(location)
+        // Retry
+        let mut res = surf::get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36").await?;
         let status = res.status();
         if status != 200 {
             return Err(surf::Error::from_str(
                 status,
-                format!("GET request failed for {}", location),
+                format!("GET request failed for {}", url),
             ));
         }
         return res.body_string().await;
