@@ -1,12 +1,12 @@
 //! `image_search::blocking` is an optional feature that contains all the original capabilities of the non-blocking counterpart, but synchronous instead of async.
 //! Similar to [`reqwest`](https://crates.io/crates/reqwest)'s blocking feature
 
-extern crate glob;
-extern crate surf;
-extern crate infer;
-extern crate futures;
 extern crate async_std;
+extern crate futures;
+extern crate glob;
+extern crate infer;
 extern crate serde_json;
+extern crate surf;
 
 use crate::{get, Arguments, DownloadError, Error, Image, SearchResult};
 use futures::future;
@@ -39,11 +39,11 @@ use std::time::Duration;
 ///     Ok(())
 /// }
 pub fn search(args: Arguments) -> SearchResult<Vec<Image>> {
-    let url = build_url(&args);
+    let url = crate::build_url(&args);
 
     let body = async_std::task::block_on(get(url))?;
 
-    let imgs = unpack(body).ok_or(Error::Parse)?;
+    let imgs = crate::unpack(body).ok_or(Error::Parse)?;
 
     if imgs.len() > args.limit && args.limit > 0 {
         Ok(imgs[..args.limit].to_vec())
@@ -269,83 +269,4 @@ async fn download_image(
     };
 
     Ok(with_extension)
-}
-
-fn build_url(args: &Arguments) -> String {
-    let mut url = "https://www.google.com/search?tbm=isch&q=".to_string() + &args.query;
-
-    let params = args.params();
-    if params.len() > 0 {
-        url += &"&tbs=ic:specific".to_string();
-        url += &params;
-    }
-
-    url
-}
-
-/// shorthand for unwrap_or_continue
-macro_rules! uoc {
-    ($opt: expr) => {
-        match $opt {
-            Some(v) => v,
-            None => {
-                continue;
-            }
-        }
-    };
-}
-
-fn unpack(mut body: String) -> Option<Vec<Image>> {
-    let script = body.rfind("AF_initDataCallback")?;
-    body = body[script..].to_string();
-
-    let start = body.find("[")?;
-    body = body[start..].to_string();
-
-    let script_end = body.find("</script>")?;
-    body = body[..script_end].to_string();
-
-    let end = body.rfind(",")?;
-    body = body[..end].to_string();
-
-    let json: serde_json::Value = match serde_json::from_str(&body) {
-        Ok(j) => j,
-        Err(_) => return None,
-    };
-
-    let image_objects = json.as_array()?[56].as_array()?[1].as_array()?[0]
-        .as_array()?
-        .last()?
-        .as_array()?[1]
-        .as_array()?[0]
-        .as_array()?;
-
-    let mut images: Vec<Image> = Vec::new();
-    for obj in image_objects.iter() {
-        let inner = uoc!(uoc!(
-            uoc!(uoc!(uoc!(obj.as_array())[0].as_array())[0].as_object())["444383007"].as_array()
-        )[1]
-        .as_array());
-
-        let (url, width, height) = match inner[3].as_array() {
-            Some(i) => (
-                uoc!(i[0].as_str()).to_string(),
-                uoc!(i[2].as_i64()),
-                uoc!(i[1].as_i64()),
-            ),
-            None => continue,
-        };
-
-        let image = Image {
-            url,
-            width,
-            height,
-            thumbnail: uoc!(uoc!(inner[2].as_array())[0].as_str()).to_string(),
-            source: uoc!(uoc!(uoc!(inner[25].as_object())["2003"].as_array())[2].as_str()).to_string(),
-        };
-
-        images.push(image);
-    }
-
-    Some(images)
 }
