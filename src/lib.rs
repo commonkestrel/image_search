@@ -63,12 +63,12 @@
 #[cfg(feature = "blocking")]
 pub mod blocking;
 
-extern crate glob;
-extern crate surf;
-extern crate infer;
-extern crate futures;
 extern crate async_std;
+extern crate futures;
+extern crate glob;
+extern crate infer;
 extern crate serde_json;
+extern crate surf;
 
 use std::env;
 use std::fmt;
@@ -540,7 +540,7 @@ pub async fn search(args: Arguments) -> SearchResult<Vec<Image>> {
 ///
 /// Must be called with [async_std::task::spawn] or with a [Tokio 0.2.x runtime](https://crates.io/crates/tokio/0.2.25).
 /// This is because [http-client](https://crates.io/crates/http-client) uses Tokio 0.2 for the hyper client.
-/// 
+///
 /// # Errors
 /// This function will return an error if:
 /// * The GET request fails
@@ -631,7 +631,7 @@ pub async fn download(args: Arguments) -> SearchResult<Vec<PathBuf>> {
 ///
 /// Must be called with [async_std::task::spawn] or with a [Tokio 0.2.x runtime](https://crates.io/crates/tokio/0.2.25).
 /// This is because [http-client](https://crates.io/crates/http-client) uses Tokio 0.2 for the hyper client.
-/// 
+///
 /// # Errors
 /// This function will return an error if:
 /// * The GET request fails
@@ -797,8 +797,8 @@ async fn download_image(
     Ok(with_extension)
 }
 
-fn build_url(args: &Arguments) -> String {
-    let mut url = "https://www.google.com/search?tbm=isch&q=".to_string() + &args.query;
+pub(crate) fn build_url(args: &Arguments) -> String {
+    let mut url = "https://www.google.com/search?udm=2&q=".to_string() + &args.query;
 
     let params = args.params();
     if params.len() > 0 {
@@ -810,6 +810,7 @@ fn build_url(args: &Arguments) -> String {
 }
 
 async fn get(url: String) -> Result<String, surf::Error> {
+    println!("{url}");
     Ok(surf::get(url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36")
         .recv_string()
@@ -828,43 +829,42 @@ macro_rules! uoc {
     };
 }
 
-fn unpack(mut body: String) -> Option<Vec<Image>> {
-    let script = body.rfind("AF_initDataCallback")?;
-    body = body[script..].to_string();
+pub(crate) fn unpack(recv: String) -> Option<Vec<Image>> {
+    std::fs::write("body.html", &recv);
 
-    let start = body.find("[")?;
-    body = body[start..].to_string();
+    let start = recv.find("var m={")? + "var m=".len();
+    let mut body = &recv[start..];
 
-    let script_end = body.find("</script>")?;
-    body = body[..script_end].to_string();
+    let script_end = body.find("var a=m")?;
+    body = &body[..script_end];
 
-    let end = body.rfind(",")?;
-    body = body[..end].to_string();
+    let end = body.rfind(";")?;
+    body = &body[..end];
 
-    let json: serde_json::Value = match serde_json::from_str(&body) {
-        Ok(j) => j,
-        Err(_) => return None,
-    };
+    let json: serde_json::Value = serde_json::from_str(&body).ok()?;
 
-    let image_objects = json.as_array()?[56].as_array()?[1].as_array()?[0]
-        .as_array()?
-        .last()?
-        .as_array()?[1]
-        .as_array()?[0]
-        .as_array()?;
+    println!("parsed");
+
+    let image_objects = json
+        .as_object()?
+        .values()
+        .filter(|list| {
+            list.as_array()
+                .map(|list| {
+                    list.get(0).map(|value| value.is_u64()).unwrap_or(false)
+                        && list.get(1).map(|value| value.is_array()).unwrap_or(false)
+                })
+                .unwrap_or(false)
+        })
+        .map(|image| image.as_array().unwrap()[1].as_array().unwrap());
 
     let mut images: Vec<Image> = Vec::new();
-    for obj in image_objects.iter() {
-        let inner = uoc!(uoc!(
-            uoc!(uoc!(uoc!(obj.as_array())[0].as_array())[0].as_object())["444383007"].as_array()
-        )[1]
-        .as_array());
-
-        let (url, width, height) = match inner[3].as_array() {
+    for obj in image_objects {
+        let (url, width, height) = match obj[3].as_array() {
             Some(i) => (
                 uoc!(i[0].as_str()).to_string(),
-                uoc!(i[2].as_i64()),
                 uoc!(i[1].as_i64()),
+                uoc!(i[2].as_i64()),
             ),
             None => continue,
         };
@@ -873,9 +873,8 @@ fn unpack(mut body: String) -> Option<Vec<Image>> {
             url,
             width,
             height,
-            thumbnail: uoc!(uoc!(inner[2].as_array())[0].as_str()).to_string(),
-            source: uoc!(uoc!(uoc!(inner[25].as_object())["2003"].as_array())[2].as_str())
-                .to_string(),
+            thumbnail: uoc!(uoc!(obj[2].as_array())[0].as_str()).to_string(),
+            source: uoc!(uoc!(uoc!(obj[9].as_object())["2003"].as_array())[2].as_str()).to_string(),
         };
 
         images.push(image);
