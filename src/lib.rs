@@ -810,7 +810,6 @@ pub(crate) fn build_url(args: &Arguments) -> String {
 }
 
 async fn get(url: String) -> Result<String, surf::Error> {
-    println!("{url}");
     Ok(surf::get(url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36")
         .recv_string()
@@ -842,8 +841,6 @@ pub(crate) fn unpack(recv: String) -> Option<Vec<Image>> {
     body = &body[..end];
 
     let json: serde_json::Value = serde_json::from_str(&body).ok()?;
-
-    println!("parsed");
 
     let image_objects = json
         .as_object()?
