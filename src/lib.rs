@@ -829,8 +829,6 @@ macro_rules! uoc {
 }
 
 pub(crate) fn unpack(recv: String) -> Option<Vec<Image>> {
-    std::fs::write("body.html", &recv);
-
     let start = recv.find("var m={")? + "var m=".len();
     let mut body = &recv[start..];
 
